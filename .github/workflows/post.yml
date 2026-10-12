@@ -1,0 +1,40 @@
+name: Post league tables
+on:
+  schedule:
+    - cron: "15 21 * * *"   # 03:00 Nepal - builds Europe + Saudi tables, publishes at 03:30 Nepal (21:45 UTC)
+    - cron: "45 3 * * *"    # 09:30 Nepal - builds MLS table, publishes at 10:00 Nepal (04:15 UTC)
+  workflow_dispatch:
+    inputs:
+      group: { description: "europe_saudi or mls", default: "europe_saudi" }
+      dry_run: { description: "true = build only, do not post", default: "true" }
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt && sudo apt-get install -y fonts-dejavu-core >/dev/null
+      - name: Decide which group
+        id: g
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "group=${{ inputs.group }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event.schedule }}" = "45 3 * * *" ]; then
+            echo "group=mls" >> $GITHUB_OUTPUT
+          else
+            echo "group=europe_saudi" >> $GITHUB_OUTPUT
+          fi
+      - name: Build and post
+        env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        run: |
+          GROUP=${{ steps.g.outputs.group }}
+          if [ "$GROUP" = "mls" ]; then AT=04:15; else AT=21:45; fi
+          EXTRA=""; if [ "${{ inputs.dry_run }}" = "true" ]; then EXTRA="--dry-run"; fi
+          python standings_post.py --group $GROUP --post-at $AT $EXTRA
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: tables, path: out/ }
