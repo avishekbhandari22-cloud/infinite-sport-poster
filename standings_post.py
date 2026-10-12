@@ -1,0 +1,472 @@
+#!/usr/bin/env python3
+"""Daily football standings poster for a Facebook Page.
+
+Usage:
+  python standings_post.py --group europe_saudi --post-at 21:45 [--dry-run]
+  python standings_post.py --group mls          --post-at 04:15 [--dry-run]
+
+--post-at is a UTC time (HH:MM). The script builds everything first, then waits
+until that time and posts. If that time has already passed it posts immediately.
+Environment (only when not --dry-run): FB_PAGE_ID, FB_PAGE_TOKEN
+"""
+import argparse, datetime as dt, io, json, os, sys, time, urllib.request, urllib.parse, uuid
+from PIL import Image, ImageDraw, ImageFont
+
+ESPN = "https://site.api.espn.com/apis/v2/sports/soccer/{lg}/standings"
+ESPN_SB = "https://site.api.espn.com/apis/site/v2/sports/soccer/{lg}/scoreboard?dates={d}"
+GRAPH = "https://graph.facebook.com/v21.0"
+
+LEAGUES = {
+    "eng.1": dict(name="Premier League", short="Premier League", accent=(56, 0, 60), zones=[(4, "ucl"), (5, "uel")], rel=3),
+    "esp.1": dict(name="La Liga", short="La Liga", accent=(190, 30, 45), zones=[(4, "ucl"), (5, "uel")], rel=3),
+    "ita.1": dict(name="Serie A", short="Serie A", accent=(0, 70, 150), zones=[(4, "ucl"), (5, "uel")], rel=3),
+    "ger.1": dict(name="Bundesliga", short="Bundesliga", accent=(200, 20, 20), zones=[(4, "ucl"), (5, "uel")], rel=3),
+    "ksa.1": dict(name="Saudi Pro League", short="Saudi Pro League", accent=(0, 100, 60), zones=[(3, "acl")], rel=3),
+    "usa.1": dict(name="MLS", short="MLS", accent=(15, 15, 20), zones=[], rel=0),
+}
+GROUPS = {
+    "europe_saudi": ["eng.1", "esp.1", "ita.1", "ger.1", "ksa.1"],
+    "mls": ["usa.1"],
+}
+TOP_N = 11  # rows shown on the main picture, like the page's current style
+
+
+# ----------------------------------------------------------------- data
+def http_json(url, tries=3):
+    last = None
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=25) as r:
+                return json.load(r)
+        except Exception as e:  # noqa
+            last = e
+            time.sleep(2 * (i + 1))
+    raise RuntimeError(f"fetch failed: {url}: {last}")
+
+
+def stat(entry, name, default=0):
+    for s in entry.get("stats", []):
+        if s.get("name") == name:
+            v = s.get("value")
+            return default if v is None else v
+    return default
+
+
+def parse_standings(js):
+    """-> list of groups: [{'name': str, 'rows': [row,...]}], rows sorted by rank."""
+    groups = []
+    for ch in js.get("children", []):
+        entries = ch.get("standings", {}).get("entries", [])
+        rows = []
+        for e in entries:
+            t = e["team"]
+            logos = t.get("logos") or []
+            rows.append(dict(
+                tid=str(t.get("id", "")),
+                team=t.get("shortDisplayName") or t.get("displayName") or t.get("name"),
+                logo=(logos[0].get("href") if logos else None),
+                mp=int(stat(e, "gamesPlayed")), w=int(stat(e, "wins")), d=int(stat(e, "ties")),
+                l=int(stat(e, "losses")), gf=int(stat(e, "pointsFor")), ga=int(stat(e, "pointsAgainst")),
+                gd=int(stat(e, "pointDifferential")), pts=int(stat(e, "points")), rank=int(stat(e, "rank", 999))))
+        rows.sort(key=lambda r: (r["rank"], -r["pts"], -r["gd"], -r["gf"]))
+        # rank may be missing/duplicated: re-number sequentially after sorting
+        for i, r in enumerate(rows, 1):
+            r["pos"] = i
+        groups.append(dict(name=ch.get("name", ""), rows=rows))
+    return groups
+
+
+ESPN_SUM = "https://site.api.espn.com/apis/site/v2/sports/soccer/{lg}/summary?event={ev}"
+import re
+
+
+def last_name(n):
+    parts = (n or "").replace("\u00a0", " ").split()
+    if not parts:
+        return "?"
+    i = len(parts) - 1
+    while i > 0 and parts[i - 1].lower() in {"de", "da", "di", "dos", "del", "van", "von", "der", "den", "le", "la", "al", "el", "ter", "ten", "mac", "mc"}:
+        i -= 1
+    return " ".join(parts[i:])
+
+
+def completed_results(lg, now_utc, hours=30):
+    """Matches completed within the last `hours` hours, with goals and each team's season leaders."""
+    out, seen = [], set()
+    for back in (0, 1, 2):
+        d = (now_utc - dt.timedelta(days=back)).strftime("%Y%m%d")
+        try:
+            js = http_json(ESPN_SB.format(lg=lg, d=d), tries=2)
+        except Exception:
+            continue
+        for ev in js.get("events", []):
+            if ev["id"] in seen:
+                continue
+            comp = ev["competitions"][0]
+            if not comp["status"]["type"].get("completed"):
+                continue
+            when = dt.datetime.fromisoformat(ev["date"].replace("Z", "+00:00"))
+            if now_utc - when > dt.timedelta(hours=hours):
+                continue
+            seen.add(ev["id"])
+            h = next(c for c in comp["competitors"] if c["homeAway"] == "home")
+            a = next(c for c in comp["competitors"] if c["homeAway"] == "away")
+            goals = []
+            for det in comp.get("details", []) or []:
+                if not det.get("scoringPlay"):
+                    continue
+                ath = (det.get("athletesInvolved") or [{}])[0]
+                goals.append(dict(tid=str(det.get("team", {}).get("id", "")), player=ath.get("displayName", ""),
+                                  own=bool(det.get("ownGoal")), pen=bool(det.get("penaltyKick")),
+                                  minute=(det.get("clock") or {}).get("displayValue", "")))
+            leaders = {}
+            for c in (h, a):
+                for l in c.get("leaders", []) or []:
+                    if l.get("name") in ("goals", "goalsLeaders") and l.get("leaders"):
+                        x = l["leaders"][0]
+                        leaders.setdefault(str(c["team"]["id"]), {})["goals"] = (x.get("athlete", {}).get("displayName", ""), x.get("displayValue", ""))
+                    if l.get("name") in ("assists", "assistsLeaders") and l.get("leaders"):
+                        x = l["leaders"][0]
+                        leaders.setdefault(str(c["team"]["id"]), {})["assists"] = (x.get("athlete", {}).get("displayName", ""), x.get("displayValue", ""))
+            out.append(dict(ev=ev["id"], home=h["team"]["shortDisplayName"], away=a["team"]["shortDisplayName"],
+                            hid=str(h["team"]["id"]), aid=str(a["team"]["id"]), hs=int(h["score"]), as_=int(a["score"]),
+                            goals=goals, leaders=leaders))
+    return out
+
+
+def add_assists(lg, m):
+    """Fill m['assists'] = [names] using the match summary 'Assisted by' text. Never raises."""
+    m["assists"] = []
+    try:
+        js = http_json(ESPN_SUM.format(lg=lg, ev=m["ev"]), tries=2)
+    except Exception:
+        return
+    for ke in js.get("keyEvents", []) or []:
+        txt = ke.get("text", "") or ""
+        if not (ke.get("scoringPlay") or txt.lower().startswith("goal")):
+            continue
+        mt = re.search(r"Assisted by ([^.]+?)(?: with | following | after | from |\.|$)", txt)
+        if mt:
+            m["assists"].append(mt.group(1).strip())
+
+
+def points_before(rows, results):
+    """Points of every team before the recent results (to tell 'stay top' from 'go top')."""
+    pts = {r["tid"]: r["pts"] for r in rows}
+    for m in results:
+        if m["hs"] > m["as_"]:
+            pts[m["hid"]] = pts.get(m["hid"], 0) - 3
+        elif m["hs"] < m["as_"]:
+            pts[m["aid"]] = pts.get(m["aid"], 0) - 3
+        else:
+            pts[m["hid"]] = pts.get(m["hid"], 0) - 1
+            pts[m["aid"]] = pts.get(m["aid"], 0) - 1
+    return pts
+
+
+def pick_featured(rows, results):
+    pos = {r["tid"]: r["pos"] for r in rows}
+    def score(m):
+        sc = 0
+        for t in (m["hid"], m["aid"]):
+            p = pos.get(t, 99)
+            sc += 6 if p == 1 else 4 if p <= 3 else 2 if p <= 6 else 0
+        sc += abs(m["hs"] - m["as_"]) * 1.5 + (m["hs"] + m["as_"]) * 0.5
+        return sc
+    return max(results, key=score)
+
+
+def match_sentence(m):
+    h, a, hs, as_ = m["home"], m["away"], m["hs"], m["as_"]
+    if hs == as_:
+        return f"{h} and {a} share the spoils in a {hs}-{as_} draw."
+    w, l, ws, ls = (h, a, hs, as_) if hs > as_ else (a, h, as_, hs)
+    d = ws - ls
+    verb = "smash" if d >= 3 else "beat" if d == 2 else "edge past"
+    return f"{w} {verb} {l} {ws}-{ls}."
+
+
+def goals_sentence(m):
+    cnt, order = {}, []
+    for g in m["goals"]:
+        if not g["player"]:
+            continue
+        key = last_name(g["player"]) + (" (og)" if g["own"] else "")
+        if key not in cnt:
+            order.append((key, g["pen"]))
+        cnt[key] = cnt.get(key, 0) + 1
+    scored = ", ".join(f"{k} ({cnt[k]})" if cnt[k] > 1 else (f"{k} (pen)" if pen else k) for k, pen in order)
+    return f"Goals: {scored}." if scored else ""
+
+
+def star_sentence(m):
+    """Mention a team's season top scorer / top assist-maker if they scored or assisted in this match."""
+    scorers = {g["player"] for g in m["goals"] if g["player"] and not g["own"]}
+    assisters = set(m.get("assists", []))
+    tname = {m["hid"]: m["home"], m["aid"]: m["away"]}
+    out = []
+    for tid, lead in m["leaders"].items():
+        gl = lead.get("goals", ("", ""))[0]
+        al = lead.get("assists", ("", ""))[0]
+        if gl and gl in scorers:
+            out.append(f"{last_name(gl)}, {tname.get(tid, '')}'s top scorer this season, got on the scoresheet.")
+    return " ".join(out[:2])
+
+
+def caption(lg, groups, results):
+    meta = LEAGUES[lg]
+    rows = groups[0]["rows"]
+    if not rows or rows[0]["mp"] == 0 or not results:
+        return None
+    top, second = rows[0], rows[1]
+    gap = top["pts"] - second["pts"]
+    pb = points_before(rows, results)
+    prev_leader = max(rows, key=lambda r: (pb.get(r["tid"], r["pts"]), -r["pos"]))
+    m = pick_featured(rows, results)
+    line1 = (match_sentence(m) + " " + goals_sentence(m)).strip()
+    line2 = star_sentence(m)
+    scope = "the " + (groups[0]["name"] or "MLS table")
+    if prev_leader["tid"] == top["tid"]:
+        verb = "stay top of"
+    else:
+        verb = "go top of"
+    if lg == "usa.1":
+        tail = f"{top['team']} {verb} {scope} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
+    else:
+        tail = f"{top['team']} {verb} the {meta['short']} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
+    line3 = tail
+    lines = [line1, line2, line3 + " \U0001F4AA", "Full table in the comments. \U0001F447"]
+    lines = [l for l in lines if l]
+    return "\n".join(lines[:3] + lines[-1:]) if len(lines) > 4 else "\n".join(lines)
+
+
+# ----------------------------------------------------------------- image
+def font(size, bold=False):
+    names = (["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf"] if bold else ["DejaVuSans.ttf", "LiberationSans-Regular.ttf"])
+    for base in ("/usr/share/fonts/truetype/dejavu/", "/usr/share/fonts/truetype/liberation/", ""):
+        for n in names:
+            try:
+                return ImageFont.truetype(base + n, size)
+            except OSError:
+                pass
+    return ImageFont.load_default()
+
+
+_LOGO_CACHE = {}
+
+
+def fetch_logo(url, size):
+    """Download a club logo once (500px PNG), return it resized with smooth edges; None if unavailable."""
+    if not url:
+        return None
+    if url not in _LOGO_CACHE:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                _LOGO_CACHE[url] = Image.open(io.BytesIO(r.read())).convert("RGBA")
+        except Exception:
+            _LOGO_CACHE[url] = None
+    src = _LOGO_CACHE[url]
+    if src is None:
+        return None
+    im = src.copy()
+    im.thumbnail((size, size), Image.LANCZOS)
+    return im
+
+
+def initials_logo(name, size, color):
+    im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.ellipse((0, 0, size - 1, size - 1), fill=color)
+    t = "".join(w[0] for w in name.split()[:2]).upper() or "?"
+    f = font(int(size * 0.42), True)
+    w = d.textlength(t, font=f)
+    d.text(((size - w) / 2, size * 0.26), t, font=f, fill="white")
+    return im
+
+
+def render_table(lg, subtitle, rows, season_txt="", n=None, use_logos=True):
+    meta = LEAGUES[lg]
+    rows = rows[:n] if n else rows
+    W, PAD = 1080, 36
+    HEAD, TABH, ROWH = 150, 70, 72
+    H = HEAD + TABH + ROWH * len(rows) + 90
+    img = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, W, HEAD), fill=meta["accent"])
+    d.text((PAD, 34), meta["name"], font=font(54, True), fill="white")
+    sub = " · ".join(x for x in (season_txt, subtitle) if x)
+    d.text((PAD, 104), sub, font=font(28), fill=(225, 225, 235))
+    # column layout
+    cols = [("MP", 560), ("W", 630), ("D", 695), ("L", 760), ("GF", 835), ("GA", 910), ("GD", 985), ("PTS", 1050)]
+    y0 = HEAD + 14
+    d.text((PAD, y0 + 18), "Team", font=font(26), fill=(110, 110, 120))
+    for label, x in cols:
+        w = d.textlength(label, font=font(26, label == "PTS"))
+        d.text((x - w, y0 + 18), label, font=font(26, label == "PTS"), fill=(30, 30, 40) if label == "PTS" else (110, 110, 120))
+    y = HEAD + TABH
+    palette = [(66, 99, 160), (160, 66, 66), (66, 140, 99), (140, 99, 160), (180, 130, 50)]
+    for i, r in enumerate(rows):
+        if i % 2 == 0:
+            d.rectangle((0, y, W, y + ROWH), fill=(246, 247, 250))
+        # zone marker
+        zone = next((z for pos, z in meta["zones"] if r["pos"] <= pos), None)
+        zc = {"ucl": (30, 110, 220), "uel": (240, 140, 20), "acl": (30, 110, 220)}.get(zone)
+        if meta["rel"] and r["pos"] > len(rows) + 0 and False:
+            zc = None
+        if zc:
+            d.rectangle((0, y + 8, 7, y + ROWH - 8), fill=zc)
+        d.text((PAD, y + 20), str(r["pos"]), font=font(30), fill=(60, 60, 70))
+        logo = fetch_logo(r["logo"], 54) if use_logos else None
+        if logo is None:
+            logo = initials_logo(r["team"], 54, palette[i % len(palette)])
+        img.paste(logo, (PAD + 52, y + (ROWH - logo.height) // 2), logo)
+        name = r["team"]
+        f = font(32)
+        while d.textlength(name, font=f) > 400 and len(name) > 3:
+            name = name[:-2].rstrip() + "."
+        d.text((PAD + 112, y + 18), name, font=f, fill=(15, 15, 25))
+        vals = [r["mp"], r["w"], r["d"], r["l"], r["gf"], r["ga"], r["gd"], r["pts"]]
+        for (label, x), v in zip(cols, vals):
+            txt = str(v)
+            fnt = font(32, True) if label == "PTS" else font(30)
+            w = d.textlength(txt, font=fnt)
+            d.text((x - w, y + 19), txt, font=fnt, fill=(15, 15, 25) if label == "PTS" else (60, 60, 70))
+        y += ROWH
+    d.line((0, y, W, y), fill=(220, 222, 230), width=2)
+    # relegation / qualification key (small footer)
+    key = []
+    if any(z == "ucl" for _, z in meta["zones"]):
+        key.append(("Champions League", (30, 110, 220)))
+    if any(z == "uel" for _, z in meta["zones"]):
+        key.append(("Europa League", (240, 140, 20)))
+    if any(z == "acl" for _, z in meta["zones"]):
+        key.append(("AFC Champions League", (30, 110, 220)))
+    x = PAD
+    for txt, c in key:
+        d.rectangle((x, y + 32, x + 8, y + 56), fill=c)
+        d.text((x + 18, y + 30), txt, font=font(24), fill=(90, 90, 100))
+        x += 40 + int(d.textlength(txt, font=font(24))) + 30
+    stamp = dt.datetime.now(dt.timezone.utc).astimezone(dt.timezone(dt.timedelta(hours=5, minutes=45)))
+    t = stamp.strftime("%d %b %Y")
+    w = d.textlength(t, font=font(24))
+    d.text((W - PAD - w, y + 30), t, font=font(24), fill=(90, 90, 100))
+    return img
+
+
+# ----------------------------------------------------------------- facebook
+def multipart(fields, files):
+    b = uuid.uuid4().hex
+    body = io.BytesIO()
+    for k, v in fields.items():
+        body.write(f"--{b}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode())
+    for k, (fn, data, ct) in files.items():
+        body.write(f"--{b}\r\nContent-Disposition: form-data; name=\"{k}\"; filename=\"{fn}\"\r\nContent-Type: {ct}\r\n\r\n".encode())
+        body.write(data)
+        body.write(b"\r\n")
+    body.write(f"--{b}--\r\n".encode())
+    return body.getvalue(), f"multipart/form-data; boundary={b}"
+
+
+def fb_post_photo(page_id, token, png, message):
+    body, ct = multipart({"message": message, "access_token": token, "published": "true"}, {"source": ("table.png", png, "image/png")})
+    req = urllib.request.Request(f"{GRAPH}/{page_id}/photos", data=body, headers={"Content-Type": ct})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        return json.load(r)
+
+
+def fb_comment_photo(post_id, token, png, message):
+    body, ct = multipart({"message": message, "access_token": token}, {"source": ("full_table.png", png, "image/png")})
+    req = urllib.request.Request(f"{GRAPH}/{post_id}/comments", data=body, headers={"Content-Type": ct})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        return json.load(r)
+
+
+def fb_like(post_id, token):
+    """Like the post as the Page (a Page token acts as the Page)."""
+    body = urllib.parse.urlencode({"access_token": token}).encode()
+    req = urllib.request.Request(f"{GRAPH}/{post_id}/likes", data=body)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.load(r)
+
+
+def to_png(img):
+    b = io.BytesIO()
+    img.save(b, "PNG", optimize=True)
+    return b.getvalue()
+
+
+# ----------------------------------------------------------------- main
+def build_one(lg, now):
+    js = http_json(ESPN.format(lg=lg))
+    groups = parse_standings(js)
+    season = (js.get("seasons") or [{}])[0].get("displayName", "") if False else ""
+    season = js.get("season", {}).get("displayName", "") if isinstance(js.get("season"), dict) else ""
+    results = completed_results(lg, now)
+    if not results:
+        return None  # no matches finished recently -> skip
+    cap = caption(lg, groups, results)
+    if not cap:
+        return None
+    main = render_table(lg, groups[0]["name"] if len(groups) > 1 else "Standings", groups[0]["rows"], season, n=TOP_N)
+    fulls = [render_table(lg, g["name"] if len(groups) > 1 else "Full table", g["rows"], season) for g in groups]
+    return dict(lg=lg, caption=cap, main=main, fulls=fulls, results=results)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--group", required=True, choices=GROUPS)
+    ap.add_argument("--post-at", help="UTC HH:MM to publish at")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--out", default="out")
+    a = ap.parse_args()
+    now = dt.datetime.now(dt.timezone.utc)
+    os.makedirs(a.out, exist_ok=True)
+    built = []
+    for lg in GROUPS[a.group]:
+        try:
+            item = build_one(lg, now)
+        except Exception as e:  # one bad league must not stop the others
+            print(f"[{lg}] ERROR building: {e}", file=sys.stderr)
+            continue
+        if not item:
+            print(f"[{lg}] skipped (no recently completed matches or no data)")
+            continue
+        item["main"].save(f"{a.out}/{lg}_main.png")
+        for i, im in enumerate(item["fulls"]):
+            im.save(f"{a.out}/{lg}_full{i}.png")
+        open(f"{a.out}/{lg}_caption.txt", "w").write(item["caption"])
+        json.dump(item["results"], open(f"{a.out}/{lg}_matchdata.json", "w"), indent=1, default=str)  # raw data, for debugging captions
+        print(f"[{lg}] built:\n{item['caption']}\n")
+        built.append(item)
+    if a.dry_run or not built:
+        return
+    if a.post_at:
+        hh, mm = map(int, a.post_at.split(":"))
+        target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        if target < now - dt.timedelta(hours=12):
+            target += dt.timedelta(days=1)
+        wait = (target - dt.datetime.now(dt.timezone.utc)).total_seconds()
+        if 0 < wait < 3 * 3600:
+            print(f"waiting {wait:.0f}s until {target.isoformat()}")
+            time.sleep(wait)
+    page, token = os.environ["FB_PAGE_ID"], os.environ["FB_PAGE_TOKEN"]
+    for item in built:
+        try:
+            res = fb_post_photo(page, token, to_png(item["main"]), item["caption"])
+            post_id = res.get("post_id") or res.get("id")
+            print(f"[{item['lg']}] posted {post_id}")
+            try:
+                fb_like(post_id, token)  # the Page likes its own post first
+            except Exception as e:
+                print(f"[{item['lg']}] like failed: {e}", file=sys.stderr)
+            for im in item["fulls"]:
+                fb_comment_photo(post_id, token, to_png(im), "Full table \U0001F447")
+        except Exception as e:
+            print(f"[{item['lg']}] ERROR posting: {e}", file=sys.stderr)
+        time.sleep(20)  # small gap between posts
+
+
+if __name__ == "__main__":
+    main()
