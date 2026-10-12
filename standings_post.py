@@ -234,7 +234,7 @@ def caption(lg, groups, results):
     if lg == "usa.1":
         tail = f"{top['team']} {verb} {scope} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
     else:
-        tail = f"{top['team']} {verb} the {meta['short']} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
+        tail = f"{top['team']} {verb} {'' if meta['short'] == 'La Liga' else 'the '}{meta['short']} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
     line3 = tail
     lines = [line1, line2, line3 + " \U0001F4AA", "Full table in the comments. \U0001F447"]
     lines = [l for l in lines if l]
@@ -400,7 +400,7 @@ def to_png(img):
 # ----------------------------------------------------------------- main
 def build_one(lg, now):
     js = http_json(ESPN.format(lg=lg))
-    groups = parse_standings(js)
+    groups = parse_standings(js); groups = [g for g in groups if lg != "usa.1" or any("Inter Miami" in r["team"] for r in g["rows"])] or groups
     season = (js.get("seasons") or [{}])[0].get("displayName", "") if False else ""
     season = js.get("season", {}).get("displayName", "") if isinstance(js.get("season"), dict) else ""
     results = completed_results(lg, now)
@@ -419,12 +419,12 @@ def main():
     ap.add_argument("--group", required=True, choices=GROUPS)
     ap.add_argument("--post-at", help="UTC HH:MM to publish at")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--out", default="out")
+    ap.add_argument("--out", default="out"); ap.add_argument("--only", help="comma-separated ESPN league codes (testing)")
     a = ap.parse_args()
     now = dt.datetime.now(dt.timezone.utc)
     os.makedirs(a.out, exist_ok=True)
     built = []
-    for lg in GROUPS[a.group]:
+    for lg in [x for x in GROUPS[a.group] if not a.only or x in a.only.split(",")]:
         try:
             item = build_one(lg, now)
         except Exception as e:  # one bad league must not stop the others
