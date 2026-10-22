@@ -431,6 +431,9 @@ def build(sport, now, force=False):
                 continue
             posts.append(dict(tag=f"{sport}_{conf}_po", caption=caption_playoffs(conf, pairs), main=render_series(conf, pairs), fulls=[]))
             continue
+        if sport == "nfl" and week and g["rows"] and max(r["gp"] for r in g["rows"]) < int(week) - 3:
+            print(f"[nfl {conf}] ESPN standings look stale (max games played {max(r['gp'] for r in g['rows'])} in week {week}); skipping")
+            continue
         ids = {r["tid"] for r in g["rows"]}
         cg = [m for m in games if m["hid"] in ids or m["aid"] in ids]
         if not cg:
