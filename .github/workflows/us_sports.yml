@@ -1,0 +1,62 @@
+name: NBA & NFL Updates
+
+on:
+  schedule:
+    - cron: "30 10 * * *"   # 6:30 am ET during daylight time (EDT)
+    - cron: "30 11 * * *"   # 6:30 am ET during standard time (EST)
+  workflow_dispatch:
+    inputs:
+      sport:
+        description: "nba, nfl or both"
+        default: "both"
+      dry_run:
+        description: "Build only, do not post (true/false)"
+        default: "true"
+      force:
+        description: "Ignore NFL Tuesday rule (true/false)"
+        default: "false"
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install -r requirements.txt
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core
+      - name: Only run at the right UTC time for the current US season
+        id: gate
+        run: |
+          OFF=$(TZ=America/New_York date +%z)
+          echo "offset=$OFF"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            H=$(date -u +%H)
+            if [ "$OFF" = "-0400" ] && [ "$H" != "10" ]; then echo "run=no" >> $GITHUB_OUTPUT; exit 0; fi
+            if [ "$OFF" = "-0500" ] && [ "$H" != "11" ]; then echo "run=no" >> $GITHUB_OUTPUT; exit 0; fi
+          fi
+          echo "run=yes" >> $GITHUB_OUTPUT
+      - name: Build and post
+        if: steps.gate.outputs.run == 'yes'
+        env:
+          FB_PAGE_ID_NBA: ${{ secrets.FB_PAGE_ID_NBA }}
+          FB_PAGE_TOKEN_NBA: ${{ secrets.FB_PAGE_TOKEN_NBA }}
+        run: |
+          SPORT="${{ inputs.sport || 'both' }}"
+          EXTRA=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then EXTRA="--dry-run"; fi
+          if [ "${{ inputs.force }}" = "true" ]; then EXTRA="$EXTRA --force"; fi
+          for S in nba nfl; do
+            if [ "$SPORT" = "both" ] || [ "$SPORT" = "$S" ]; then
+              python us_sports_post.py --sport $S --post-at-et 08:00 $EXTRA || true
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: us-tables
+          path: out_us
+          if-no-files-found: ignore
