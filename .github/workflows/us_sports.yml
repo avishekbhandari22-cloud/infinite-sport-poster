@@ -52,7 +52,7 @@ jobs:
           if [ "${{ inputs.force }}" = "true" ]; then EXTRA="$EXTRA --force"; fi
           for S in nba nfl; do
             if [ "$SPORT" = "both" ] || [ "$SPORT" = "$S" ]; then
-              python us_sports_post.py --sport $S --post-at-et 08:00 $EXTRA || true
+              python us_sports_fix.py --sport $S --post-at-et 08:00 $EXTRA || true
             fi
           done
       - uses: actions/upload-artifact@v4
