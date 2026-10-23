@@ -2,8 +2,8 @@ name: NBA & NFL Updates
 
 on:
   schedule:
-    - cron: "30 10 * * *"   # 6:30 am ET during daylight time (EDT)
-    - cron: "30 11 * * *"   # 6:30 am ET during standard time (EST)
+    - cron: "0 7 * * *"   # 3:00 am ET during daylight time (EDT); post is scheduled for 8:00 am ET
+    - cron: "0 8 * * *"   # 3:00 am ET during standard time (EST)
   workflow_dispatch:
     inputs:
       sport:
@@ -28,15 +28,16 @@ jobs:
       - run: |
           pip install -r requirements.txt
           sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core
-      - name: Only run at the right UTC time for the current US season
+      - name: Only run the cron that matches the current US season (delay-proof)
         id: gate
         run: |
           OFF=$(TZ=America/New_York date +%z)
           echo "offset=$OFF"
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            H=$(date -u +%H)
-            if [ "$OFF" = "-0400" ] && [ "$H" != "10" ]; then echo "run=no" >> $GITHUB_OUTPUT; exit 0; fi
-            if [ "$OFF" = "-0500" ] && [ "$H" != "11" ]; then echo "run=no" >> $GITHUB_OUTPUT; exit 0; fi
+            S="${{ github.event.schedule }}"
+            echo "schedule=$S"
+            if [ "$OFF" = "-0400" ] && [ "$S" != "0 7 * * *" ]; then echo "run=no" >> $GITHUB_OUTPUT; exit 0; fi
+            if [ "$OFF" = "-0500" ] && [ "$S" != "0 8 * * *" ]; then echo "run=no" >> $GITHUB_OUTPUT; exit 0; fi
           fi
           echo "run=yes" >> $GITHUB_OUTPUT
       - name: Build and post
