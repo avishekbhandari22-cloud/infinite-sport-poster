@@ -214,34 +214,97 @@ def star_sentence(m):
     return " ".join(out[:2])
 
 
+def _ord(n):
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def _interest(pos, m):
+    sc = 0
+    for t in (m["hid"], m["aid"]):
+        p = pos.get(t, 99)
+        sc += 6 if p == 1 else 4 if p <= 3 else 2 if p <= 6 else 0
+    sc += abs(m["hs"] - m["as_"]) * 1.5 + (m["hs"] + m["as_"]) * 0.5
+    return sc
+
+
+def _result_line(pos, m):
+    line = match_sentence(m).rstrip(".")
+    tags = []
+    for tid, name in ((m["hid"], m["home"]), (m["aid"], m["away"])):
+        p = pos.get(tid, 99)
+        if p == 1:
+            tags.append(f"{name} lead the table")
+        elif p <= 4:
+            tags.append(f"{name} are {_ord(p)}")
+    if tags:
+        line += " (" + "; ".join(tags[:2]) + ")"
+    line += "."
+    g = goals_sentence(m)
+    return (line + " " + g).strip()
+
+
+def _standouts(ms):
+    cnt = {}
+    for m in ms:
+        for g in m.get("goals", []):
+            if g.get("player") and not g.get("own"):
+                k = last_name(g["player"])
+                cnt[k] = cnt.get(k, 0) + 1
+    best = sorted([(c, k) for k, c in cnt.items() if c >= 2], reverse=True)[:3]
+    if not best:
+        return ""
+    words = {2: "a brace", 3: "a hat-trick"}
+    parts = [f"{k} with {words.get(c, str(c) + ' goals')}" for c, k in best]
+    return "Standout performers: " + ", ".join(parts) + "."
+
+
 def caption(lg, groups, results):
     meta = LEAGUES[lg]
     rows = groups[0]["rows"]
     if not rows or rows[0]["mp"] == 0 or not results:
         return None
+    pos = {r["tid"]: r["pos"] for r in rows}
     top, second = rows[0], rows[1]
     gap = top["pts"] - second["pts"]
     pb = points_before(rows, results)
     prev_leader = max(rows, key=lambda r: (pb.get(r["tid"], r["pts"]), -r["pos"]))
-    m = pick_featured(rows, results)
-    line1 = (match_sentence(m) + " " + goals_sentence(m)).strip()
-    line2 = star_sentence(m)
-    scope = "the " + (groups[0]["name"] or "MLS table")
-    if prev_leader["tid"] == top["tid"]:
-        verb = "stay top of"
-    else:
-        verb = "go top of"
-    if lg == "usa.1":
-        tail = f"{top['team']} {verb} {scope} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
-    else:
-        tail = f"{top['team']} {verb} {'' if meta['short'] == 'La Liga' else 'the '}{meta['short']} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
-    line3 = tail
-    lines = [line1, line2, line3 + " \U0001F4AA", "Full table in the comments. \U0001F447"]
-    lines = [l for l in lines if l]
-    return "\n".join(lines[:3] + lines[-1:]) if len(lines) > 4 else "\n".join(lines)
+    ranked = sorted(results, key=lambda x: _interest(pos, x), reverse=True)
+    shown = ranked[:3]
+    feat = shown[0]
+    scope = "the " + (groups[0]["name"] or "MLS table") if lg == "usa.1" else ("" if meta["short"] == "La Liga" else "the ") + meta["short"]
+    # hook: choose among the angles that fit today's data, rotate by day
+    hooks = []
+    if prev_leader["tid"] != top["tid"]:
+        hooks.append(f"New leaders: {top['team']} go top of {scope}!")
+    big = max(results, key=lambda x: abs(x["hs"] - x["as_"]))
+    bd = abs(big["hs"] - big["as_"])
+    if bd >= 3:
+        w = big["home"] if big["hs"] > big["as_"] else big["away"]
+        l = big["away"] if big["hs"] > big["as_"] else big["home"]
+        hooks.append(f"{w} run riot against {l}, {max(big['hs'], big['as_'])}-{min(big['hs'], big['as_'])}.")
+    tot = sum(x["hs"] + x["as_"] for x in results)
+    if tot >= 3 * len(results) and len(results) >= 2:
+        hooks.append(f"{tot} goals in {len(results)} matches in {scope}.")
+    draws = [x for x in results if x["hs"] == x["as_"]]
+    if draws and any(pos.get(t, 99) <= 3 for d in draws for t in (d["hid"], d["aid"])):
+        hooks.append("Points dropped at the top of the table.")
+    hooks.append(f"Latest {meta['short']} results and what they mean for the table.")
+    hook = hooks[dt.datetime.utcnow().timetuple().tm_yday % len(hooks)]
+    lines = [hook, ""]
+    for m in shown:
+        lines.append("⚽ " + _result_line(pos, m))
+    st = _standouts(shown)
+    if st:
+        lines.append("")
+        lines.append("⭐ " + st)
+    star = star_sentence(feat)
+    if star:
+        lines.append("⭐ " + star)
+    tail = f"{top['team']} {'stay top of' if prev_leader['tid'] == top['tid'] else 'go top of'} {scope} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
+    lines += ["", "\U0001F4CA " + tail, "Full table in the comments. \U0001F447"]
+    return "\n".join(lines)
 
 
-# ----------------------------------------------------------------- image
 def font(size, bold=False):
     names = (["DejaVuSans-Bold.ttf", "LiberationSans-Bold.ttf"] if bold else ["DejaVuSans.ttf", "LiberationSans-Regular.ttf"])
     for base in ("/usr/share/fonts/truetype/dejavu/", "/usr/share/fonts/truetype/liberation/", ""):
