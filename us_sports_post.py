@@ -171,6 +171,21 @@ def game_line(m):
     return f"{w} {verb} {l} {ws}-{ls}. {star_txt(m, side)}".strip(), side
 
 
+def games_lines(rows, games, n=3):
+    """Top results of the day (games involving the best-placed teams first): winner, loser, score, and each side's top performer."""
+    pos = {r["tid"]: r["pos"] for r in rows}
+    def sc(m):
+        return sum(6 if pos.get(t, 99) == 1 else 4 if pos.get(t, 99) <= 3 else 2 if pos.get(t, 99) <= 6 else 0 for t in (m["hid"], m["aid"])) + abs(m["hs"] - m["as_"]) * 0.2
+    out = []
+    for m in sorted(games, key=lambda x: -sc(x))[:n]:
+        line, side = game_line(m)
+        lose = star_txt(m, "a" if side == "h" else "h")
+        if lose:
+            line += " " + lose.replace("led the way with", "had")
+        out.append("\u25AA " + line)
+    return out
+
+
 def caption_regular(sport, conf, grp, games, week=None):
     meta = SPORTS[sport]
     rows = grp["rows"]
@@ -182,7 +197,7 @@ def caption_regular(sport, conf, grp, games, week=None):
     rec = lambda r: f"{r['w']}-{r['l']}" + (f"-{r['t']}" if r["t"] else "")
     if sport == "nba":
         head = f"\U0001F3C0 NBA {name} standings — {today}"
-        gl = [game_line(feature(rows, games))[0]] if games else []
+        gl = games_lines(rows, games)
         lead = f"{top['team']} lead the {conf} at {rec(top)}" + (f", {sec['gb']} {'game' if str(sec['gb']) == '1' else 'games'} clear of {sec['team']}." if str(sec["gb"]) not in ("-", "0", "") else f", level with {sec['team']}.")
         cut = rows[5] if len(rows) > 5 else None
         po = rows[9] if len(rows) > 9 else None
@@ -190,9 +205,7 @@ def caption_regular(sport, conf, grp, games, week=None):
         lines = [head, *gl, lead, extra, f"Who's your {conf} champion pick? Tell us below. \U0001F4AC", f"Full 15-team table in the comments. {FOOT}"]
     else:
         head = f"\U0001F3C8 NFL {name} standings — Week {week}" if week else f"\U0001F3C8 NFL {name} standings"
-        gl = []
-        for g in sorted(games, key=lambda m: -abs(m["hs"] - m["as_"]))[:1]:
-            gl.append(game_line(g)[0])
+        gl = games_lines(rows, games)
         lead = f"{top['team']} hold the No. 1 seed at {rec(top)}, ahead of {sec['team']} ({rec(sec)})."
         extra = f"The top 7 in each conference make the playoffs, and only No. 1 gets a first-round bye. {rows[6]['team']} currently hold the final spot ({rec(rows[6])})." if len(rows) > 6 else ""
         lines = [head, *gl, lead, extra, f"Is your team in the {conf} playoff picture? Tell us below. \U0001F4AC", f"Full table in the comments. {FOOT}"]
