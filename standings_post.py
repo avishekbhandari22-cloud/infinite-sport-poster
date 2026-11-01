@@ -91,7 +91,7 @@ def last_name(n):
     return " ".join(parts[i:])
 
 
-def completed_results(lg, now_utc, hours=30):
+def completed_results(lg, now_utc, hours=14):
     """Matches completed within the last `hours` hours, with goals and each team's season leaders."""
     out, seen = [], set()
     for back in (0, 1, 2):
@@ -300,6 +300,55 @@ def caption(lg, groups, results):
     star = star_sentence(feat)
     if star:
         lines.append("⭐ " + star)
+    tail = f"{top['team']} {'stay top of' if prev_leader['tid'] == top['tid'] else 'go top of'} {scope} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
+    lines += ["", "\U0001F4CA " + tail, "Full table in the comments. \U0001F447"]
+    return "\n".join(lines)
+
+
+TOP_CLUBS = {
+    "eng.1": ["arsenal", "man city", "manchester city", "liverpool", "chelsea", "man united", "manchester united"],
+    "esp.1": ["real madrid", "barcelona", "atlético", "atletico"],
+    "ita.1": ["napoli", "milan", "atalanta", "juventus", "como"],
+    "ger.1": ["bayern", "dortmund"],
+    "ksa.1": ["nassr", "hilal", "qad", "ittihad"],
+}
+
+
+def _is_top(lg, name):
+    n = (name or "").lower()
+    return any(k in n for k in TOP_CLUBS.get(lg, []))
+
+
+def _involves_top(lg, m):
+    return _is_top(lg, m["home"]) or _is_top(lg, m["away"])
+
+
+def caption(lg, groups, results):
+    meta = LEAGUES[lg]
+    rows = groups[0]["rows"]
+    if not rows or rows[0]["mp"] == 0 or not results:
+        return None
+    pos = {r["tid"]: r["pos"] for r in rows}
+    top, second = rows[0], rows[1]
+    gap = top["pts"] - second["pts"]
+    pb = points_before(rows, results)
+    prev_leader = max(rows, key=lambda r: (pb.get(r["tid"], r["pts"]), -r["pos"]))
+    scope = "the " + (groups[0]["name"] or "MLS table") if lg == "usa.1" else ("" if meta["short"] == "La Liga" else "the ") + meta["short"]
+    tops = [m for m in results if _involves_top(lg, m)]
+    feat = max(tops or results, key=lambda x: _interest(pos, x))
+    rest = sorted([m for m in results if m is not feat],
+                  key=lambda x: (not _involves_top(lg, x), -_interest(pos, x)))
+    shown = rest[:4]
+    lines = [_result_line(pos, feat), ""]
+    if rest:
+        goals_rest = sum(x["hs"] + x["as_"] for x in rest)
+        lines.append(f"{len(rest)} more {meta['short']} results are in, with {goals_rest} goals between them:")
+        for m in shown:
+            lines.append("⚽ " + _result_line(pos, m))
+    st = _standouts([feat] + shown)
+    if st:
+        lines.append("")
+        lines.append("⭐ " + st)
     tail = f"{top['team']} {'stay top of' if prev_leader['tid'] == top['tid'] else 'go top of'} {scope} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
     lines += ["", "\U0001F4CA " + tail, "Full table in the comments. \U0001F447"]
     return "\n".join(lines)
