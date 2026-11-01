@@ -171,7 +171,7 @@ def pick_featured(rows, results):
         sc = 0
         for t in (m["hid"], m["aid"]):
             p = pos.get(t, 99)
-            sc += 6 if p == 1 else 4 if p <= 3 else 2 if p <= 6 else 0
+            sc += 30 if p <= 3 else 14 if p <= 6 else 0
         sc += abs(m["hs"] - m["as_"]) * 1.5 + (m["hs"] + m["as_"]) * 0.5
         return sc
     return max(results, key=score)
@@ -222,7 +222,7 @@ def _interest(pos, m):
     sc = 0
     for t in (m["hid"], m["aid"]):
         p = pos.get(t, 99)
-        sc += 6 if p == 1 else 4 if p <= 3 else 2 if p <= 6 else 0
+        sc += 30 if p <= 3 else 14 if p <= 6 else 0
     sc += abs(m["hs"] - m["as_"]) * 1.5 + (m["hs"] + m["as_"]) * 0.5
     return sc
 
@@ -276,7 +276,7 @@ def caption(lg, groups, results):
     hooks = []
     if prev_leader["tid"] != top["tid"]:
         hooks.append(f"New leaders: {top['team']} go top of {scope}!")
-    big = max(results, key=lambda x: abs(x["hs"] - x["as_"]))
+    big = max([x for x in results if min(pos.get(x["hid"], 99), pos.get(x["aid"], 99)) <= 6] or results, key=lambda x: abs(x["hs"] - x["as_"]))
     bd = abs(big["hs"] - big["as_"])
     if bd >= 3:
         w = big["home"] if big["hs"] > big["as_"] else big["away"]
