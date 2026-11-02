@@ -7,6 +7,8 @@ on:
     inputs: { only: { description: "optional league code e.g. esp.1 (testing)", default: "" },
       group: { description: "europe_saudi or mls", default: "europe_saudi" },
       dry_run: { description: "true = build only, do not post", default: "true" } }
+permissions:
+  contents: write   # lets the job delete the pictures it has posted
 jobs:
   post:
     runs-on: ubuntu-latest
@@ -35,6 +37,14 @@ jobs:
           if [ "$GROUP" = "mls" ]; then AT=04:15; else AT=22:15; fi
           EXTRA=""; if [ "${{ inputs.dry_run }}" = "true" ]; then EXTRA="--dry-run"; fi
           python standings_post.py --group $GROUP --post-at $AT $EXTRA ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
+      - name: Remove pictures that were posted
+        if: ${{ inputs.dry_run != 'true' }}
+        run: |
+          if [ -s out/used_images.txt ]; then
+            git config user.name "poster-bot"; git config user.email "poster-bot@users.noreply.github.com"
+            xargs -r git rm -q < out/used_images.txt
+            git commit -qm "remove posted pictures" && git push || true
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: tables, path: out/ }
