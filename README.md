@@ -38,8 +38,5 @@ MLS publishes at 10:00 Nepal time. A league is skipped when it had no finished m
 - Comments: the Page likes its own post, then writes two 2-line comments: English, then the local language of the league's
   country (Serie A Italian, La Liga Spanish, Bundesliga German, Ligue 1 French, Saudi Pro League Arabic).
   Premier League and MLS get the English comment only. There is no "Full table" comment any more.
-- Location: the script looks up the league's country as a Facebook place (England, Spain, Italy, Germany, France,
-  Saudi Arabia, United States). If it cannot find a safe match it posts without a location (see the log line `location:`).
-  You can force the place with a secret `FB_PLACE_IDS`, for example `{"ita.1": "123456789"}`.
 - Facebook gives no official way for a program to like or comment from a personal profile, so that part stays manual.
 - "Last 5" form dots are not included yet.

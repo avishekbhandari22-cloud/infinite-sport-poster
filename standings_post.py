@@ -359,8 +359,6 @@ def caption(lg, groups, results):
 # ----------------------------------------------------------------- new style: table caption + two comments
 IMG_NAME = {"eng.1": "premier_league", "esp.1": "la_liga", "ita.1": "serie_a", "ger.1": "bundesliga",
             "fra.1": "ligue_1", "ksa.1": "saudi_pro_league", "usa.1": "mls_eastern"}
-COUNTRY = {"eng.1": "England", "esp.1": "Spain", "ita.1": "Italy", "ger.1": "Germany",
-           "fra.1": "France", "ksa.1": "Saudi Arabia", "usa.1": "United States"}
 # language of the 2nd comment. Premier League and MLS: English only (one comment).
 LOCAL_LANG = {"ita.1": "it", "esp.1": "es", "ger.1": "de", "fra.1": "fr", "ksa.1": "ar"}
 SCOPE_EN = {"eng.1": "the Premier League", "esp.1": "La Liga", "ita.1": "Serie A", "ger.1": "the Bundesliga",
@@ -603,10 +601,8 @@ def multipart(fields, files):
     return body.getvalue(), f"multipart/form-data; boundary={b}"
 
 
-def fb_post_photo(page_id, token, png, message, place=None):
+def fb_post_photo(page_id, token, png, message):
     fields = {"message": message, "access_token": token, "published": "true"}
-    if place:
-        fields["place"] = place  # Facebook place id -> the post shows "at <country>"
     body, ct = multipart(fields, {"source": ("table.png", png, "image/png")})
     req = urllib.request.Request(f"{GRAPH}/{page_id}/photos", data=body, headers={"Content-Type": ct})
     with urllib.request.urlopen(req, timeout=90) as r:
@@ -621,29 +617,6 @@ def fb_comment_text(post_id, token, message):
         return json.load(r)
 
 
-_PLACE_CACHE = {}
-
-
-def place_for(lg, token):
-    """Facebook place id of the league's country. FB_PLACE_IDS (json {"ita.1": "123"}) overrides the search.
-    Returns None when nothing safe is found - the post then goes out without a location."""
-    if lg in _PLACE_CACHE:
-        return _PLACE_CACHE[lg]
-    pid = None
-    try:
-        pid = json.loads(os.environ.get("FB_PLACE_IDS", "{}")).get(lg)
-        if not pid:
-            q = urllib.parse.urlencode({"type": "place", "q": COUNTRY[lg], "fields": "id,name,location", "limit": 15, "access_token": token})
-            for p in http_json(f"{GRAPH}/search?{q}", tries=2).get("data", []):
-                loc = p.get("location") or {}
-                if (p.get("name") or "").strip().lower() == COUNTRY[lg].lower() and not loc.get("street"):
-                    pid = p["id"]
-                    break
-    except Exception as e:  # noqa
-        print(f"[{lg}] place lookup failed: {e}", file=sys.stderr)
-    print(f"[{lg}] location: {COUNTRY[lg]} -> {pid or 'not found, posting without location'}")
-    _PLACE_CACHE[lg] = pid
-    return pid
 
 
 def fb_like(post_id, token):
@@ -726,7 +699,7 @@ def main():
     used = []
     for item in built:
         try:
-            res = fb_post_photo(page, token, item["png"] or to_png(item["main"]), item["caption"], place_for(item["lg"], token))
+            res = fb_post_photo(page, token, item["png"] or to_png(item["main"]), item["caption"])
             post_id = res.get("post_id") or res.get("id")
             print(f"[{item['lg']}] posted {post_id}")
             if item["used"]:
