@@ -21,11 +21,12 @@ LEAGUES = {
     "esp.1": dict(name="La Liga", short="La Liga", accent=(190, 30, 45), zones=[(4, "ucl"), (5, "uel")], rel=3),
     "ita.1": dict(name="Serie A", short="Serie A", accent=(0, 70, 150), zones=[(4, "ucl"), (5, "uel")], rel=3),
     "ger.1": dict(name="Bundesliga", short="Bundesliga", accent=(200, 20, 20), zones=[(4, "ucl"), (5, "uel")], rel=3),
+    "fra.1": dict(name="Ligue 1", short="Ligue 1", accent=(10, 40, 90), zones=[(3, "ucl"), (4, "uel")], rel=2),
     "ksa.1": dict(name="Saudi Pro League", short="Saudi Pro League", accent=(0, 100, 60), zones=[(3, "acl")], rel=3),
     "usa.1": dict(name="MLS", short="MLS", accent=(15, 15, 20), zones=[], rel=0),
 }
 GROUPS = {
-    "europe_saudi": ["eng.1", "esp.1", "ita.1", "ger.1", "ksa.1"],
+    "europe_saudi": ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "ksa.1"],
     "mls": ["usa.1"],
 }
 TOP_N = 11  # rows shown on the main picture, like the page's current style
@@ -310,6 +311,7 @@ TOP_CLUBS = {
     "esp.1": ["real madrid", "barcelona", "atlético", "atletico"],
     "ita.1": ["napoli", "milan", "atalanta", "juventus", "como"],
     "ger.1": ["bayern", "dortmund"],
+    "fra.1": ["paris saint", "psg", "marseille", "monaco", "lyon", "lille"],
     "ksa.1": ["nassr", "hilal", "qad", "ittihad"],
 }
 
@@ -352,6 +354,126 @@ def caption(lg, groups, results):
     tail = f"{top['team']} {'stay top of' if prev_leader['tid'] == top['tid'] else 'go top of'} {scope} with {top['pts']} points" + (f", {gap} clear of {second['team']}." if gap > 0 else f", level with {second['team']}.")
     lines += ["", "\U0001F4CA " + tail, "Full table in the comments. \U0001F447"]
     return "\n".join(lines)
+
+
+# ----------------------------------------------------------------- new style: table caption + two comments
+IMG_NAME = {"eng.1": "premier_league", "esp.1": "la_liga", "ita.1": "serie_a", "ger.1": "bundesliga",
+            "fra.1": "ligue_1", "ksa.1": "saudi_pro_league", "usa.1": "mls_eastern"}
+COUNTRY = {"eng.1": "England", "esp.1": "Spain", "ita.1": "Italy", "ger.1": "Germany",
+           "fra.1": "France", "ksa.1": "Saudi Arabia", "usa.1": "United States"}
+# language of the 2nd comment. Premier League and MLS: English only (one comment).
+LOCAL_LANG = {"ita.1": "it", "esp.1": "es", "ger.1": "de", "fra.1": "fr", "ksa.1": "ar"}
+SCOPE_EN = {"eng.1": "the Premier League", "esp.1": "La Liga", "ita.1": "Serie A", "ger.1": "the Bundesliga",
+            "fra.1": "Ligue 1", "ksa.1": "the Saudi Pro League", "usa.1": "the Eastern Conference"}
+TITLE_EN = {"eng.1": "the Premier League", "esp.1": "La Liga", "ita.1": "the Scudetto", "ger.1": "the Bundesliga",
+            "fra.1": "Ligue 1", "ksa.1": "the Saudi Pro League", "usa.1": "the MLS Cup"}
+LG_LOCAL = {"it": "Serie A", "es": "La Liga", "de": "Bundesliga", "fr": "Ligue 1", "ar": "دوري روشن السعودي"}
+
+
+def _unbeaten(rows):
+    return [r for r in rows if r["l"] == 0 and r["mp"] >= 3]
+
+
+def caption_table(lg, groups):
+    """3-line caption written from the table: leader, places 3-5, then one rotating fact."""
+    rows = groups[0]["rows"]
+    if len(rows) < 6 or rows[0]["mp"] == 0:
+        return None
+    sc = SCOPE_EN[lg]
+    r1, r2, r3, r4, r5 = rows[:5]
+    gap = r1["pts"] - r2["pts"]
+    day = dt.datetime.utcnow().timetuple().tm_yday
+    if gap > 0:
+        l1 = f"{r1['team']} lead {sc} with {r1['pts']} points, {gap} clear of {r2['team']}. \U0001F51D"
+    else:
+        l1 = f"{r1['team']} and {r2['team']} are level on {r1['pts']} points at the top of {sc}. \U0001F51D"
+    l2 = f"{r3['team']} are third on {r3['pts']}, {r4['team']} fourth on {r4['pts']} and {r5['team']} fifth on {r5['pts']}."
+    facts = []
+    unb = _unbeaten(rows)
+    if len(unb) == 1:
+        facts.append(f"{unb[0]['team']} are the only unbeaten team after {unb[0]['mp']} games.")
+    elif len(unb) == 2:
+        facts.append(f"{unb[0]['team']} and {unb[1]['team']} are the only unbeaten teams after {max(u['mp'] for u in unb)} games.")
+    last = rows[-1]
+    if lg != "usa.1" and len(rows) > 6:
+        safe = rows[-4]["pts"] - last["pts"]
+        if safe > 0:
+            facts.append(f"{last['team']} are bottom on {last['pts']} points, {safe} from safety.")
+    best = max(rows, key=lambda r: r["gd"])
+    if best["gd"] >= 5:
+        facts.append(f"{best['team']} have the best goal difference in {sc}: +{best['gd']}.")
+    facts.append(f"Only {r1['pts'] - r4['pts']} points separate the top four." if r1["pts"] - r4["pts"] >= 2 else f"{r4['team']} sit fourth with {r4['pts']} points.")
+    return "\n".join([l1, l2, facts[day % len(facts)]])
+
+
+def _pts(lang, n):
+    if lang == "ar":
+        return "نقطة واحدة" if n == 1 else "نقطتين" if n == 2 else f"{n} نقاط" if 3 <= n <= 10 else f"{n} نقطة"
+    one = {"en": "point", "it": "punto", "es": "punto", "de": "Punkt", "fr": "point"}[lang]
+    many = {"en": "points", "it": "punti", "es": "puntos", "de": "Punkte", "fr": "points"}[lang]
+    return f"{n} {one if n == 1 else many}"
+
+
+# each language: unb1/unb2 = unbeaten fact (1 or 2 teams), gap/level = leader sentence,
+# title_q = question about the title, spread/top4_q = top-four spread + question
+PH = {
+    "en": dict(unb1="{a} are the only unbeaten side in {lg}. \U0001F525", unb2="{a} and {b} are the only unbeaten sides in {lg}. \U0001F525",
+               gap="{a} lead {b} by {n}.", level="{a} and {b} are level on {n}.",
+               title_q="Who wins {title}? \U0001F447", spread="Only {n} separate the top four in {lg}. \U0001F525",
+               top4_q="Who finishes in the top four? \U0001F447"),
+    "it": dict(unb1="{a} è l'unica squadra imbattuta in {lg}. \U0001F525", unb2="{a} e {b} sono le uniche squadre imbattute in {lg}. \U0001F525",
+               gap="{a} è in testa con {n} di vantaggio su {b}.", level="{a} e {b} sono appaiate in vetta con {n}.",
+               title_q="Chi vincerà lo scudetto? \U0001F447", spread="Solo {n} separano le prime quattro in {lg}. \U0001F525",
+               top4_q="Chi chiuderà in zona Champions? \U0001F447"),
+    "es": dict(unb1="{a} es el único equipo invicto en {lg}. \U0001F525", unb2="{a} y {b} son los únicos equipos invictos en {lg}. \U0001F525",
+               gap="{a} lidera con {n} de ventaja sobre {b}.", level="{a} y {b} empatan en lo más alto con {n}.",
+               title_q="¿Quién ganará La Liga? \U0001F447", spread="Solo {n} separan a los cuatro primeros de {lg}. \U0001F525",
+               top4_q="¿Quién terminará en puestos de Champions? \U0001F447"),
+    "de": dict(unb1="{a} ist das einzige ungeschlagene Team der {lg}. \U0001F525", unb2="{a} und {b} sind die einzigen ungeschlagenen Teams der {lg}. \U0001F525",
+               gap="{a} liegt {n} vor {b}.", level="{a} und {b} sind punktgleich an der Spitze.",
+               title_q="Wer wird Deutscher Meister? \U0001F447", spread="Nur {n} trennen die ersten vier der {lg}. \U0001F525",
+               top4_q="Wer landet in den Champions-League-Rängen? \U0001F447"),
+    "fr": dict(unb1="{a} est la seule équipe invaincue en {lg}. \U0001F525", unb2="{a} et {b} sont les seules équipes invaincues en {lg}. \U0001F525",
+               gap="{a} est leader avec {n} d'avance sur {b}.", level="{a} et {b} sont à égalité en tête avec {n}.",
+               title_q="Qui sera champion de France ? \U0001F447", spread="Seulement {n} séparent les quatre premiers en {lg}. \U0001F525",
+               top4_q="Qui finira dans le top 4 ? \U0001F447"),
+    "ar": dict(unb1="{a} هو الفريق الوحيد الذي لم يخسر في {lg}. \U0001F525", unb2="{a} و {b} هما الفريقان الوحيدان اللذان لم يخسرا في {lg}. \U0001F525",
+               gap="{a} يتصدر بفارق {n} عن {b}.", level="{a} و {b} متعادلان في الصدارة برصيد {n}.",
+               title_q="من سيفوز بلقب الدوري؟ \U0001F447", spread="فارق {n} فقط بين الفرق الأربعة الأولى في {lg}. \U0001F525",
+               top4_q="من سيحسم المراكز الأربعة الأولى؟ \U0001F447"),
+}
+
+
+def _comment(lg, rows, lang):
+    """Two lines in `lang`. Rotates between three angles by day so the same comment does not repeat."""
+    ph = PH[lang]
+    lgn = SCOPE_EN[lg] if lang == "en" else LG_LOCAL[lang]
+    title = TITLE_EN[lg]
+    r1, r2, r4 = rows[0], rows[1], rows[3]
+    gap = r1["pts"] - r2["pts"]
+    gap_s = (ph["gap"] if gap > 0 else ph["level"]).format(a=r1["team"], b=r2["team"], n=_pts(lang, gap if gap > 0 else r1["pts"]))
+    title_q = ph["title_q"].format(title=title)
+    unb = _unbeaten(rows)
+    opts = []
+    if len(unb) in (1, 2):
+        first = (ph["unb1"] if len(unb) == 1 else ph["unb2"]).format(a=unb[0]["team"], b=unb[-1]["team"], lg=lgn)
+        opts.append((first, gap_s + " " + title_q))
+    opts.append((gap_s, title_q))
+    spread = r1["pts"] - r4["pts"]
+    if spread >= 2:
+        opts.append((ph["spread"].format(n=_pts(lang, spread), lg=lgn), ph["top4_q"]))
+    day = dt.datetime.utcnow().timetuple().tm_yday
+    a, b = opts[day % len(opts)]
+    return a + "\n" + b
+
+
+def make_comments(lg, groups):
+    """[(lang, text)] - English first, then the local language of the league's country (if any)."""
+    rows = groups[0]["rows"]
+    out = [("en", _comment(lg, rows, "en"))]
+    if lg in LOCAL_LANG:
+        out.append((LOCAL_LANG[lg], _comment(lg, rows, LOCAL_LANG[lg])))
+    return out
 
 
 def font(size, bold=False):
@@ -481,18 +603,47 @@ def multipart(fields, files):
     return body.getvalue(), f"multipart/form-data; boundary={b}"
 
 
-def fb_post_photo(page_id, token, png, message):
-    body, ct = multipart({"message": message, "access_token": token, "published": "true"}, {"source": ("table.png", png, "image/png")})
+def fb_post_photo(page_id, token, png, message, place=None):
+    fields = {"message": message, "access_token": token, "published": "true"}
+    if place:
+        fields["place"] = place  # Facebook place id -> the post shows "at <country>"
+    body, ct = multipart(fields, {"source": ("table.png", png, "image/png")})
     req = urllib.request.Request(f"{GRAPH}/{page_id}/photos", data=body, headers={"Content-Type": ct})
     with urllib.request.urlopen(req, timeout=90) as r:
         return json.load(r)
 
 
-def fb_comment_photo(post_id, token, png, message):
-    body, ct = multipart({"message": message, "access_token": token}, {"source": ("full_table.png", png, "image/png")})
-    req = urllib.request.Request(f"{GRAPH}/{post_id}/comments", data=body, headers={"Content-Type": ct})
-    with urllib.request.urlopen(req, timeout=90) as r:
+def fb_comment_text(post_id, token, message):
+    """Text comment written by the Page itself."""
+    body = urllib.parse.urlencode({"message": message, "access_token": token}).encode()
+    req = urllib.request.Request(f"{GRAPH}/{post_id}/comments", data=body)
+    with urllib.request.urlopen(req, timeout=60) as r:
         return json.load(r)
+
+
+_PLACE_CACHE = {}
+
+
+def place_for(lg, token):
+    """Facebook place id of the league's country. FB_PLACE_IDS (json {"ita.1": "123"}) overrides the search.
+    Returns None when nothing safe is found - the post then goes out without a location."""
+    if lg in _PLACE_CACHE:
+        return _PLACE_CACHE[lg]
+    pid = None
+    try:
+        pid = json.loads(os.environ.get("FB_PLACE_IDS", "{}")).get(lg)
+        if not pid:
+            q = urllib.parse.urlencode({"type": "place", "q": COUNTRY[lg], "fields": "id,name,location", "limit": 15, "access_token": token})
+            for p in http_json(f"{GRAPH}/search?{q}", tries=2).get("data", []):
+                loc = p.get("location") or {}
+                if (p.get("name") or "").strip().lower() == COUNTRY[lg].lower() and not loc.get("street"):
+                    pid = p["id"]
+                    break
+    except Exception as e:  # noqa
+        print(f"[{lg}] place lookup failed: {e}", file=sys.stderr)
+    print(f"[{lg}] location: {COUNTRY[lg]} -> {pid or 'not found, posting without location'}")
+    _PLACE_CACHE[lg] = pid
+    return pid
 
 
 def fb_like(post_id, token):
@@ -510,20 +661,28 @@ def to_png(img):
 
 
 # ----------------------------------------------------------------- main
-def build_one(lg, now):
+def build_one(lg, now, imgdir="posts"):
     js = http_json(ESPN.format(lg=lg))
     groups = parse_standings(js); groups = [g for g in groups if lg != "usa.1" or any("Inter Miami" in r["team"] for r in g["rows"])] or groups
-    season = (js.get("seasons") or [{}])[0].get("displayName", "") if False else ""
     season = js.get("season", {}).get("displayName", "") if isinstance(js.get("season"), dict) else ""
     results = completed_results(lg, now)
     if not results:
         return None  # no matches finished recently -> skip
-    cap = caption(lg, groups, results)
+    cap = caption_table(lg, groups)
     if not cap:
         return None
-    main = render_table(lg, groups[0]["name"] if len(groups) > 1 else "Standings", groups[0]["rows"], season, n=TOP_N)
-    fulls = [render_table(lg, g["name"] if len(groups) > 1 else "Full table", g["rows"], season) for g in groups]
-    return dict(lg=lg, caption=cap, main=main, fulls=fulls, results=results)
+    comments = make_comments(lg, groups)
+    # the picture: the finished STANDINGS picture from the Crest Placer (posts/<league>.png), else the old plain table
+    imgfile = f"{imgdir}/{IMG_NAME[lg]}.png"
+    png, used = None, None
+    if os.path.exists(imgfile):
+        png = open(imgfile, "rb").read()
+        main = Image.open(io.BytesIO(png)).convert("RGB")
+        used = imgfile
+    else:
+        print(f"[{lg}] WARNING: {imgfile} not found - using the old plain table picture", file=sys.stderr)
+        main = render_table(lg, groups[0]["name"] if len(groups) > 1 else "Standings", groups[0]["rows"], season, n=TOP_N)
+    return dict(lg=lg, caption=cap, comments=comments, main=main, png=png, used=used, results=results)
 
 
 def main():
@@ -532,13 +691,14 @@ def main():
     ap.add_argument("--post-at", help="UTC HH:MM to publish at")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--out", default="out"); ap.add_argument("--only", help="comma-separated ESPN league codes (testing)")
+    ap.add_argument("--images", default="posts", help="folder with the finished STANDINGS pictures (<league>.png)")
     a = ap.parse_args()
     now = dt.datetime.now(dt.timezone.utc)
     os.makedirs(a.out, exist_ok=True)
     built = []
     for lg in [x for x in GROUPS[a.group] if not a.only or x in a.only.split(",")]:
         try:
-            item = build_one(lg, now)
+            item = build_one(lg, now, a.images)
         except Exception as e:  # one bad league must not stop the others
             print(f"[{lg}] ERROR building: {e}", file=sys.stderr)
             continue
@@ -546,11 +706,10 @@ def main():
             print(f"[{lg}] skipped (no recently completed matches or no data)")
             continue
         item["main"].save(f"{a.out}/{lg}_main.png")
-        for i, im in enumerate(item["fulls"]):
-            im.save(f"{a.out}/{lg}_full{i}.png")
         open(f"{a.out}/{lg}_caption.txt", "w").write(item["caption"])
+        open(f"{a.out}/{lg}_comments.txt", "w").write("\n\n".join(f"[{l}]\n{t}" for l, t in item["comments"]))
         json.dump(item["results"], open(f"{a.out}/{lg}_matchdata.json", "w"), indent=1, default=str)  # raw data, for debugging captions
-        print(f"[{lg}] built:\n{item['caption']}\n")
+        print(f"[{lg}] built:\n{item['caption']}\n" + "\n".join(f"  comment [{l}]: {t!r}" for l, t in item["comments"]) + "\n")
         built.append(item)
     if a.dry_run or not built:
         return
@@ -564,20 +723,29 @@ def main():
             print(f"waiting {wait:.0f}s until {target.isoformat()}")
             time.sleep(wait)
     page, token = os.environ["FB_PAGE_ID"], os.environ["FB_PAGE_TOKEN"]
+    used = []
     for item in built:
         try:
-            res = fb_post_photo(page, token, to_png(item["main"]), item["caption"])
+            res = fb_post_photo(page, token, item["png"] or to_png(item["main"]), item["caption"], place_for(item["lg"], token))
             post_id = res.get("post_id") or res.get("id")
             print(f"[{item['lg']}] posted {post_id}")
+            if item["used"]:
+                used.append(item["used"])
             try:
                 fb_like(post_id, token)  # the Page likes its own post first
             except Exception as e:
                 print(f"[{item['lg']}] like failed: {e}", file=sys.stderr)
-            for im in item["fulls"]:
-                fb_comment_photo(post_id, token, to_png(im), "Full table \U0001F447")
+            for lang, text in item["comments"]:  # English first, then the local language
+                try:
+                    fb_comment_text(post_id, token, text)
+                    print(f"[{item['lg']}] comment [{lang}] posted")
+                except Exception as e:
+                    print(f"[{item['lg']}] comment [{lang}] failed: {e}", file=sys.stderr)
+                time.sleep(3)
         except Exception as e:
             print(f"[{item['lg']}] ERROR posting: {e}", file=sys.stderr)
         time.sleep(20)  # small gap between posts
+    open(f"{a.out}/used_images.txt", "w").write("\n".join(used))  # the workflow deletes these so a picture is never posted twice
 
 
 if __name__ == "__main__":

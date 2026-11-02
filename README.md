@@ -29,5 +29,17 @@ MLS publishes at 10:00 Nepal time. A league is skipped when it had no finished m
   or posts right away if the time has passed.
 - Captions: the match is the most important one of the day (top teams, big margins). Goals and scorers come from ESPN. "Top scorer this season" is each club's own leading scorer according to ESPN. No assist data is used.
 - Each run also saves raw match data (`*_matchdata.json`) in the downloadable `tables` files so wrong captions can be traced.
-- The Page likes its own post and adds the full table as the first comment. Facebook gives no official way for a program to like or comment from a personal profile, so that part stays manual.
+- Leagues: Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Saudi Pro League (03:50 Nepal start) and MLS Eastern (10:00 Nepal).
+- Pictures: put the finished STANDINGS pictures from the Crest Placer in the `posts/` folder with these exact names:
+  `premier_league.png, la_liga.png, serie_a.png, bundesliga.png, ligue_1.png, saudi_pro_league.png, mls_eastern.png`.
+  After a picture is posted the workflow deletes it, so an old table can never be posted twice. If a picture is missing the
+  script falls back to the old plain table and says so in the log.
+- Caption: 3 lines from the table (leader, places 3-5, one rotating fact).
+- Comments: the Page likes its own post, then writes two 2-line comments: English, then the local language of the league's
+  country (Serie A Italian, La Liga Spanish, Bundesliga German, Ligue 1 French, Saudi Pro League Arabic).
+  Premier League and MLS get the English comment only. There is no "Full table" comment any more.
+- Location: the script looks up the league's country as a Facebook place (England, Spain, Italy, Germany, France,
+  Saudi Arabia, United States). If it cannot find a safe match it posts without a location (see the log line `location:`).
+  You can force the place with a secret `FB_PLACE_IDS`, for example `{"ita.1": "123456789"}`.
+- Facebook gives no official way for a program to like or comment from a personal profile, so that part stays manual.
 - "Last 5" form dots are not included yet.
