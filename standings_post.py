@@ -66,6 +66,7 @@ def parse_standings(js):
             rows.append(dict(
                 tid=str(t.get("id", "")),
                 team=t.get("shortDisplayName") or t.get("displayName") or t.get("name"),
+                full=t.get("displayName") or t.get("shortDisplayName") or t.get("name"),
                 logo=(logos[0].get("href") if logos else None),
                 mp=int(stat(e, "gamesPlayed")), w=int(stat(e, "wins")), d=int(stat(e, "ties")),
                 l=int(stat(e, "losses")), gf=int(stat(e, "pointsFor")), ga=int(stat(e, "pointsAgainst")),
@@ -634,28 +635,28 @@ def to_png(img):
 
 
 # ----------------------------------------------------------------- main
-def build_one(lg, now, imgdir="posts"):
+def build_one(lg, now, force=False):
     js = http_json(ESPN.format(lg=lg))
     groups = parse_standings(js); groups = [g for g in groups if lg != "usa.1" or any("Inter Miami" in r["team"] for r in g["rows"])] or groups
     season = js.get("season", {}).get("displayName", "") if isinstance(js.get("season"), dict) else ""
     results = completed_results(lg, now)
-    if not results:
+    if not results and not force:
         return None  # no matches finished recently -> skip
     cap = caption_table(lg, groups)
     if not cap:
         return None
     comments = make_comments(lg, groups)
-    # the picture: the finished STANDINGS picture from the Crest Placer (posts/<league>.png), else the old plain table
-    imgfile = f"{imgdir}/{IMG_NAME[lg]}.png"
-    png, used = None, None
-    if os.path.exists(imgfile):
-        png = open(imgfile, "rb").read()
-        main = Image.open(io.BytesIO(png)).convert("RGB")
-        used = imgfile
-    else:
-        print(f"[{lg}] WARNING: {imgfile} not found - using the old plain table picture", file=sys.stderr)
-        main = render_table(lg, groups[0]["name"] if len(groups) > 1 else "Standings", groups[0]["rows"], season, n=TOP_N)
-    return dict(lg=lg, caption=cap, comments=comments, main=main, png=png, used=used, results=results)
+    # the picture is drawn NOW from the same live table the caption uses (never a pre-made picture)
+    rows = groups[0]["rows"]
+    try:
+        import stadium
+        stats = {}
+        main = stadium.render_standings(lg, rows, fetch_logo, stats)
+        print(f"[{lg}] picture drawn from live table: {stats.get('rows')} rows, {stats.get('logos')} logos")
+    except Exception as e:  # never skip a post over a drawing problem: fall back to the plain table (still live data)
+        print(f"[{lg}] WARNING: stadium picture failed ({e}); using the plain table picture", file=sys.stderr)
+        main = render_table(lg, groups[0]["name"] if len(groups) > 1 else "Standings", rows, season, n=TOP_N)
+    return dict(lg=lg, caption=cap, comments=comments, main=main, png=to_png(main), used=None, results=results)
 
 
 def main():
@@ -664,14 +665,13 @@ def main():
     ap.add_argument("--post-at", help="UTC HH:MM to publish at")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--out", default="out"); ap.add_argument("--only", help="comma-separated ESPN league codes (testing)")
-    ap.add_argument("--images", default="posts", help="folder with the finished STANDINGS pictures (<league>.png)")
     a = ap.parse_args()
     now = dt.datetime.now(dt.timezone.utc)
     os.makedirs(a.out, exist_ok=True)
     built = []
     for lg in [x for x in GROUPS[a.group] if not a.only or x in a.only.split(",")]:
         try:
-            item = build_one(lg, now, a.images)
+            item = build_one(lg, now, force=a.dry_run)
         except Exception as e:  # one bad league must not stop the others
             print(f"[{lg}] ERROR building: {e}", file=sys.stderr)
             continue

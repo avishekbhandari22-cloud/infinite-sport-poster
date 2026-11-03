@@ -30,10 +30,11 @@ MLS publishes at 10:00 Nepal time. A league is skipped when it had no finished m
 - Captions: the match is the most important one of the day (top teams, big margins). Goals and scorers come from ESPN. "Top scorer this season" is each club's own leading scorer according to ESPN. No assist data is used.
 - Each run also saves raw match data (`*_matchdata.json`) in the downloadable `tables` files so wrong captions can be traced.
 - Leagues: Premier League, La Liga, Serie A, Bundesliga, Ligue 1, Saudi Pro League (03:50 Nepal start) and MLS Eastern (10:00 Nepal).
-- Pictures: put the finished STANDINGS pictures from the Crest Placer in the `posts/` folder with these exact names:
-  `premier_league.png, la_liga.png, serie_a.png, bundesliga.png, ligue_1.png, saudi_pro_league.png, mls_eastern.png`.
-  After a picture is posted the workflow deletes it, so an old table can never be posted twice. If a picture is missing the
-  script falls back to the old plain table and says so in the log.
+- Pictures: the STANDINGS picture is drawn by `stadium.py` at post time from the same live ESPN table that the caption uses, so the
+  picture and the caption can never disagree. Club logos and the league logo are loaded from ESPN at run time; if one cannot be
+  loaded that club shows its initials. Nothing needs to be uploaded or replaced by hand. (The old `posts/` pictures are no longer used.)
+- A manual dry run (dry_run `true`) builds every league, ignores the "recent match" rule, posts nothing and puts the pictures on the
+  `preview` branch so you can look at them.
 - Caption: 3 lines from the table (leader, places 3-5, one rotating fact).
 - Comments: the Page likes its own post, then writes two 2-line comments: English, then the local language of the league's
   country (Serie A Italian, La Liga Spanish, Bundesliga German, Ligue 1 French, Saudi Pro League Arabic).
