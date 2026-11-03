@@ -8,7 +8,7 @@ on:
       group: { description: "europe_saudi or mls", default: "europe_saudi" },
       dry_run: { description: "true = build only, do not post", default: "true" } }
 permissions:
-  contents: write   # lets the job delete the pictures it has posted
+  contents: write   # lets the dry run publish a preview branch
 jobs:
   post:
     runs-on: ubuntu-latest
@@ -45,6 +45,15 @@ jobs:
             xargs -r git rm -q < out/used_images.txt
             git commit -qm "remove posted pictures" && git push || true
           fi
+      - name: Publish preview pictures (dry run only)
+        if: ${{ inputs.dry_run == 'true' }}
+        run: |
+          mkdir -p /tmp/prev && cp out/*_main.png out/*_caption.txt /tmp/prev/ || true
+          git config user.name "poster-bot"; git config user.email "poster-bot@users.noreply.github.com"
+          git checkout -q --orphan preview
+          git rm -rfq .
+          cp /tmp/prev/* .
+          git add -A && git commit -qm "dry-run preview" && git push -f origin preview
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: tables, path: out/ }
