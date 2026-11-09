@@ -1,9 +1,13 @@
 name: Post league tables
-# Every 30 minutes through the European afternoon/night and the US night (UTC times).
-# Each league posts on its own, as soon as all of its matches for that day are finished.
+# Times are UTC. Nepal = UTC+5:45.
+# Europe + Saudi: checked every 30 min from 00:00 to 04:00 Nepal time; each league posts on its own
+#   as soon as all of its matches for that day are finished.
+# MLS: one run at 10:00 Nepal time (Inter Miami's conference), as before.
 on:
   schedule:
-    - cron: "10,40 0-6,12-23 * * *"
+    - cron: "15,45 18-21 * * *"   # 00:00, 00:30 ... 03:30 Nepal
+    - cron: "15 22 * * *"         # 04:00 Nepal
+    - cron: "15 4 * * *"          # 10:00 Nepal - MLS
   workflow_dispatch:
     inputs:
       only: { description: "optional league codes e.g. esp.1 or eng.1,esp.1", default: "" }
@@ -24,7 +28,14 @@ jobs:
         with: { python-version: "3.12" }
       - name: Which leagues have finished all their matches for the day?
         id: chk
-        run: python matchday.py --check ${{ inputs.only && format('--only {0}', inputs.only) || '' }} ${{ inputs.force == 'true' && '--force' || '' }}
+        run: |
+          if [ "${{ github.event.schedule }}" = "15 4 * * *" ]; then
+            python matchday.py --check --only usa.1 --force
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            python matchday.py --check --only eng.1,esp.1,ita.1,ger.1,fra.1,ksa.1
+          else
+            python matchday.py --check ${{ inputs.only && format('--only {0}', inputs.only) || '' }} ${{ inputs.force == 'true' && '--force' || '' }}
+          fi
       - name: Install
         if: steps.chk.outputs.ready != ''
         run: pip install -r requirements.txt && sudo apt-get install -y fonts-dejavu-core >/dev/null
