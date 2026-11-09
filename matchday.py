@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Post each league's table as soon as THAT league's matches for the day are all finished.
 
-The workflow runs this every 30 minutes:
+Europe + Saudi: checked every 30 min from 00:00 to 04:00 Nepal time.
+MLS: one run at 10:00 Nepal time that posts if any MLS match finished overnight (the old rule).
   python matchday.py --check                 -> prints which leagues are ready (stdlib only, fast)
   python matchday.py --post esp.1,eng.1      -> builds and posts those leagues, records them in state/posted.json
 
 A league is "ready" for a match day (the league's own local calendar day, e.g. Sunday in Spain) when:
   * at least one match that day has finished,
   * no match that day is still to start or still being played,
-  * the last match kicked off at least 2h20m ago (so ESPN's table has caught up),
+  * the last match kicked off at least 2h05m ago (so ESPN's table has caught up),
   * and that league + day has not been posted before (state/posted.json).
 So La Liga posts after Sunday's last La Liga game, the Premier League after its own last game, and so on.
 """
@@ -22,7 +23,7 @@ LEAGUE_TZ = {
 }
 ORDER = list(LEAGUE_TZ)
 STATE = "state/posted.json"
-SETTLE = dt.timedelta(hours=2, minutes=20)   # last kickoff -> table safe to read
+SETTLE = dt.timedelta(hours=2, minutes=5)    # last kickoff -> table safe to read
 TOO_OLD = dt.timedelta(hours=20)            # never post a day that finished long ago
 STALE_PRE = dt.timedelta(hours=4)           # a "not started" match this far past kickoff = postponed
 
@@ -122,7 +123,8 @@ def post(ready, dry_run, out="out"):
         page, token = os.environ["FB_PAGE_ID"], os.environ["FB_PAGE_TOKEN"]
     for i, (lg, days) in enumerate(ready.items()):
         try:
-            item = sp.build_one(lg, now, force=True)
+            # MLS keeps its old daily 10:00 rule: post if any MLS match finished in the last ~14 h
+            item = sp.build_one(lg, now, force=(lg != "usa.1"))
         except Exception as e:
             print(f"[{lg}] ERROR building: {e}", file=sys.stderr)
             continue
