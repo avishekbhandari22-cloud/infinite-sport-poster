@@ -113,7 +113,26 @@ def check(leagues, now, force=False):
     return ready
 
 
-def post(ready, dry_run, out="out"):
+def _ord(n):
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def ronaldo_line(rows):
+    """One caption line about Ronaldo's club, written only from the live table."""
+    r = next((x for x in rows if "nassr" in (x.get("team") or "").lower() or "nassr" in (x.get("full") or "").lower()), None)
+    if not r:
+        return None
+    if r["pos"] == 1:
+        nxt = rows[1]
+        gap = r["pts"] - nxt["pts"]
+        tail = f"{gap} clear of {nxt['team']}" if gap > 0 else f"level with {nxt['team']}"
+        return f"\u2b50 Cristiano Ronaldo's Al Nassr top the table on {r['pts']} points, {tail}."
+    lead = rows[0]
+    return (f"\u2b50 Cristiano Ronaldo's Al Nassr are {_ord(r['pos'])} on {r['pts']} points, "
+            f"{lead['pts'] - r['pts']} behind leaders {lead['team']}.")
+
+
+def post(ready, dry_run, out="out", gap=20, ronaldo=False):
     import standings_post as sp  # needs Pillow; only loaded when something is ready
     now = dt.datetime.now(dt.timezone.utc)
     os.makedirs(out, exist_ok=True)
@@ -122,6 +141,10 @@ def post(ready, dry_run, out="out"):
     if not dry_run:
         page, token = os.environ["FB_PAGE_ID"], os.environ["FB_PAGE_TOKEN"]
     for i, (lg, days) in enumerate(ready.items()):
+        if i and not dry_run:
+            print(f"waiting {gap}s before {lg}")
+            time.sleep(gap)  # wait BEFORE building so the table is fresh at posting time
+        now = dt.datetime.now(dt.timezone.utc)
         try:
             # MLS keeps its old daily 10:00 rule: post if any MLS match finished in the last ~14 h
             item = sp.build_one(lg, now, force=(lg != "usa.1"))
@@ -131,6 +154,10 @@ def post(ready, dry_run, out="out"):
         if not item:
             print(f"[{lg}] nothing to post (no table data)")
             continue
+        if ronaldo and lg == "ksa.1":
+            line = ronaldo_line(sp.parse_standings(sp.http_json(sp.ESPN.format(lg=lg)))[0]["rows"])
+            if line:
+                item["caption"] = item["caption"] + "\n" + line
         item["main"].save(f"{out}/{lg}_main.png")
         open(f"{out}/{lg}_caption.txt", "w").write(item["caption"])
         open(f"{out}/{lg}_comments.txt", "w").write("\n\n".join(f"[{l}]\n{t}" for l, t in item["comments"]))
@@ -138,8 +165,6 @@ def post(ready, dry_run, out="out"):
         print(f"[{lg}] built:\n{item['caption']}\n")
         if dry_run:
             continue
-        if i:
-            time.sleep(20)
         try:
             res = sp.fb_post_photo(page, token, item["png"], item["caption"])
         except Exception as e:
@@ -169,9 +194,11 @@ def main():
     ap.add_argument("--only", help="limit to these league codes (testing)")
     ap.add_argument("--force", action="store_true", help="treat leagues as finished (testing)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--gap", type=int, default=20, help="seconds between posts")
+    ap.add_argument("--ronaldo", action="store_true", help="add the Ronaldo / Al Nassr line to the Saudi caption")
     a = ap.parse_args()
     now = dt.datetime.now(dt.timezone.utc)
-    leagues = [x for x in ORDER if not a.only or x in a.only.split(",")]
+    leagues = [x for x in a.only.split(",") if x in LEAGUE_TZ] if a.only else ORDER  # keeps the given order
     if a.check:
         ready = check(leagues, now, a.force)
         os.makedirs("out", exist_ok=True)
@@ -187,7 +214,7 @@ def main():
             ready = {}
         ready = {lg: ready.get(lg) or dt.datetime.now(ZoneInfo(LEAGUE_TZ[lg])).date().isoformat()
                  for lg in a.post.split(",") if lg in LEAGUE_TZ}
-        post(ready, a.dry_run)
+        post(ready, a.dry_run, gap=a.gap, ronaldo=a.ronaldo)
 
 
 if __name__ == "__main__":
