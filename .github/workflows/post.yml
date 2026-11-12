@@ -13,6 +13,8 @@ on:
       only: { description: "optional league codes e.g. esp.1 or eng.1,esp.1", default: "" }
       force: { description: "true = ignore the 'all matches finished' check (testing)", default: "false" }
       dry_run: { description: "true = build only, do not post", default: "true" }
+      gap_minutes: { description: "minutes between posts (manual runs)", default: "0" }
+      ronaldo: { description: "true = add Ronaldo / Al Nassr line to the Saudi caption", default: "false" }
 permissions:
   contents: write   # saves state/posted.json and the dry-run preview branch
 concurrency:
@@ -21,7 +23,7 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 345
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -44,7 +46,9 @@ jobs:
         env:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
-        run: python matchday.py --post "${{ steps.chk.outputs.ready }}" ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+        run: |
+          GAP=$(( ${{ inputs.gap_minutes || '0' }} * 60 )); [ "$GAP" -gt 0 ] || GAP=20
+          python matchday.py --post "${{ steps.chk.outputs.ready }}" --gap $GAP ${{ inputs.dry_run == 'true' && '--dry-run' || '' }} ${{ inputs.ronaldo == 'true' && '--ronaldo' || '' }}
       - name: Save which league days were posted
         if: ${{ always() && steps.chk.outputs.ready != '' && inputs.dry_run != 'true' }}
         run: |
