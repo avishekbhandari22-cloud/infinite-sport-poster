@@ -16,10 +16,13 @@ on:
       gap_minutes: { description: "minutes between posts (manual runs)", default: "0" }
       ronaldo: { description: "true = add Ronaldo / Al Nassr line to the Saudi caption", default: "false" }
       style: { description: "picture: table or titlerace", default: "table" }
+      delay_minutes: { description: "wait this many minutes before posting", default: "0" }
+      chain: { description: "true = post only the FIRST league, then start a new run for the rest after gap_minutes", default: "false" }
 permissions:
   contents: write   # saves state/posted.json and the dry-run preview branch
+  actions: write    # lets a chained run start the next one
 concurrency:
-  group: league-tables
+  group: ${{ inputs.chain == 'true' && format('chain-{0}', github.run_id) || 'league-tables' }}
   cancel-in-progress: false
 jobs:
   post:
@@ -29,6 +32,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
+      - name: Wait before posting
+        if: ${{ inputs.delay_minutes && inputs.delay_minutes != '0' }}
+        run: sleep $(( ${{ inputs.delay_minutes }} * 60 ))
       - name: Which leagues have finished all their matches for the day?
         id: chk
         run: |
@@ -37,7 +43,9 @@ jobs:
           elif [ "${{ github.event_name }}" = "schedule" ]; then
             python matchday.py --check --only eng.1,esp.1,ita.1,ger.1,fra.1,ksa.1
           else
-            python matchday.py --check ${{ inputs.only && format('--only {0}', inputs.only) || '' }} ${{ inputs.force == 'true' && '--force' || '' }}
+            ONLY="${{ inputs.only }}"
+            if [ "${{ inputs.chain }}" = "true" ]; then ONLY="${ONLY%%,*}"; fi
+            python matchday.py --check ${ONLY:+--only $ONLY} ${{ inputs.force == 'true' && '--force' || '' }}
           fi
       - name: Install
         if: steps.chk.outputs.ready != ''
@@ -58,6 +66,16 @@ jobs:
           git commit -qm "posted: ${{ steps.chk.outputs.ready }}" || exit 0
           for i in 1 2 3 4 5; do git pull -q --rebase && git push -q && exit 0; sleep 5; done
           exit 1
+      - name: Start the next league's run
+        if: ${{ always() && inputs.chain == 'true' && contains(inputs.only, ',') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REST="${{ inputs.only }}"; REST="${REST#*,}"
+          gh workflow run post.yml --repo "${{ github.repository }}" --ref main \
+            -f only="$REST" -f force="${{ inputs.force }}" -f dry_run="${{ inputs.dry_run }}" \
+            -f gap_minutes="${{ inputs.gap_minutes }}" -f ronaldo="${{ inputs.ronaldo }}" -f style="${{ inputs.style }}" \
+            -f delay_minutes="$(( ${{ inputs.gap_minutes || '60' }} - 2 ))" -f chain=true
       - name: Publish preview pictures (dry run only)
         if: ${{ inputs.dry_run == 'true' && steps.chk.outputs.ready != '' }}
         run: |
