@@ -132,7 +132,7 @@ def ronaldo_line(rows):
             f"{lead['pts'] - r['pts']} behind leaders {lead['team']}.")
 
 
-def post(ready, dry_run, out="out", gap=20, ronaldo=False):
+def post(ready, dry_run, out="out", gap=20, ronaldo=False, style="table"):
     import standings_post as sp  # needs Pillow; only loaded when something is ready
     now = dt.datetime.now(dt.timezone.utc)
     os.makedirs(out, exist_ok=True)
@@ -158,6 +158,16 @@ def post(ready, dry_run, out="out", gap=20, ronaldo=False):
             line = ronaldo_line(sp.parse_standings(sp.http_json(sp.ESPN.format(lg=lg)))[0]["rows"])
             if line:
                 item["caption"] = item["caption"] + "\n" + line
+        if style == "titlerace":  # "Who will win <league>?" poster, top 3 from the same live table
+            try:
+                import titlerace
+                js = sp.http_json(sp.ESPN.format(lg=lg))
+                groups = sp.parse_standings(js)
+                groups = [g for g in groups if lg != "usa.1" or any("Inter Miami" in r["team"] for r in g["rows"])] or groups
+                item["main"] = titlerace.render_title_race(lg, groups[0]["rows"], sp.fetch_logo)
+                item["png"] = sp.to_png(item["main"])
+            except Exception as e:
+                print(f"[{lg}] title-race picture failed ({e}); keeping the table picture", file=sys.stderr)
         item["main"].save(f"{out}/{lg}_main.png")
         open(f"{out}/{lg}_caption.txt", "w").write(item["caption"])
         open(f"{out}/{lg}_comments.txt", "w").write("\n\n".join(f"[{l}]\n{t}" for l, t in item["comments"]))
@@ -196,6 +206,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--gap", type=int, default=20, help="seconds between posts")
     ap.add_argument("--ronaldo", action="store_true", help="add the Ronaldo / Al Nassr line to the Saudi caption")
+    ap.add_argument("--style", default="table", choices=["table", "titlerace"], help="picture style")
     a = ap.parse_args()
     now = dt.datetime.now(dt.timezone.utc)
     leagues = [x for x in a.only.split(",") if x in LEAGUE_TZ] if a.only else ORDER  # keeps the given order
@@ -214,7 +225,7 @@ def main():
             ready = {}
         ready = {lg: ready.get(lg) or dt.datetime.now(ZoneInfo(LEAGUE_TZ[lg])).date().isoformat()
                  for lg in a.post.split(",") if lg in LEAGUE_TZ}
-        post(ready, a.dry_run, gap=a.gap, ronaldo=a.ronaldo)
+        post(ready, a.dry_run, gap=a.gap, ronaldo=a.ronaldo, style=a.style)
 
 
 if __name__ == "__main__":
