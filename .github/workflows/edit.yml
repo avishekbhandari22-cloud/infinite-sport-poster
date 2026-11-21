@@ -1,0 +1,22 @@
+name: Edit today's captions
+on:
+  workflow_dispatch:
+    inputs:
+      leagues: { description: "league codes, e.g. esp.1,ger.1", default: "esp.1" }
+      dry_run: { description: "true = only show the new caption", default: "true" }
+      hours: { description: "results from the last N hours", default: "14" }
+permissions:
+  contents: read
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        run: python edit_caption.py "${{ inputs.leagues }}" --hours ${{ inputs.hours }} ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
