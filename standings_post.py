@@ -405,6 +405,31 @@ def caption_table(lg, groups):
     return "\n".join([l1, l2, facts[day % len(facts)]])
 
 
+def caption_full(lg, groups, results):
+    """Results FIRST (a top club's game on line 1, then the other results), then the table lines."""
+    tbl = caption_table(lg, groups)
+    if not tbl:
+        return None
+    if not results:
+        return tbl
+    rows = groups[0]["rows"]
+    pos = {r["tid"]: r["pos"] for r in rows}
+    ordered = sorted(results, key=lambda x: (not _involves_top(lg, x), -_interest(pos, x)))
+    feat, rest = ordered[0], ordered[1:]
+    short = LEAGUES[lg]["short"]
+    lines = ["\u26BD " + _result_line(pos, feat)]
+    if rest:
+        lines.append("")
+        lines.append(f"Other {short} results:" if len(rest) > 1 else f"Also in {short}:")
+        for m in rest[:4]:
+            lines.append("\u26BD " + _result_line(pos, m))
+    st = _standouts(ordered[:5])
+    if st:
+        lines.append("\u2B50 " + st)
+    lines += ["", "\U0001F4CA " + tbl]
+    return "\n".join(lines)
+
+
 def _pts(lang, n):
     if lang == "ar":
         return "نقطة واحدة" if n == 1 else "نقطتين" if n == 2 else f"{n} نقاط" if 3 <= n <= 10 else f"{n} نقطة"
@@ -642,7 +667,7 @@ def build_one(lg, now, force=False):
     results = completed_results(lg, now)
     if not results and not force:
         return None  # no matches finished recently -> skip
-    cap = caption_table(lg, groups)
+    cap = caption_full(lg, groups, results)
     if not cap:
         return None
     comments = make_comments(lg, groups)
