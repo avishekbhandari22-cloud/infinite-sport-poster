@@ -44,6 +44,9 @@ jobs:
             python matchday.py --check --only usa.1 --force
           elif [ "${{ github.event_name }}" = "schedule" ]; then
             python matchday.py --check --only eng.1,esp.1,ita.1,ger.1,fra.1,ksa.1
+          elif [ "${{ inputs.only }}" = "night" ]; then
+            # outside timer (cron-job.org) every 30 min, 00:00-04:00 Nepal: same rule as the night schedule
+            python matchday.py --check --only eng.1,esp.1,ita.1,ger.1,fra.1,ksa.1
           else
             ONLY="${{ inputs.only }}"
             if [ "${{ inputs.chain }}" = "true" ]; then ONLY="${ONLY%%,*}"; fi
