@@ -1,0 +1,74 @@
+name: Night timer
+# Starts the league-table check every 30 min from 00:00 to 04:00 Nepal time (UTC+5:45).
+# GitHub often skips scheduled runs, so this job stays alive through the night and starts
+# "Post league tables" (only=night) itself at :00 and :30. The evening crons below just make sure
+# one timer is running before midnight; extra copies wait in the queue and exit at once.
+# Free for public repos. post.yml keeps its own 04:28 / 05:28 runs as a backup.
+on:
+  schedule:
+    - cron: "17 12-17 * * *"   # about 18:02 ... 23:02 Nepal: kick-starts
+  workflow_dispatch:
+permissions:
+  actions: write
+  contents: read
+concurrency:
+  group: night-timer
+  cancel-in-progress: false
+jobs:
+  timer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 358
+    steps:
+      - name: Tick every 30 minutes, 00:00-04:00 Nepal
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'EOF'
+          import datetime as dt, os, subprocess, time
+          from zoneinfo import ZoneInfo
+          NPT = ZoneInfo("Asia/Kathmandu")
+          START = time.time()
+          LIMIT = 5 * 3600 + 40 * 60          # stay under the 6 h job limit, then hand over
+
+          def now():
+              return dt.datetime.now(NPT)
+
+          def run(wf, **inputs):
+              cmd = ["gh", "workflow", "run", wf, "--repo", os.environ["REPO"], "--ref", "main"]
+              for k, v in inputs.items():
+                  cmd += ["-f", f"{k}={v}"]
+              print(now().strftime("%Y-%m-%d %H:%M:%S"), "start", wf, inputs, flush=True)
+              for i in range(3):
+                  if subprocess.run(cmd).returncode == 0:
+                      return
+                  time.sleep(20)
+
+          def next_tick(t):
+              base = t.replace(hour=0, minute=0, second=0, microsecond=0)
+              for day in (0, 1):
+                  for k in range(9):                 # 00:00, 00:30 ... 04:00
+                      x = base + dt.timedelta(days=day, minutes=30 * k)
+                      if x > t:
+                          return x
+
+          n = now()
+          if dt.time(4, 5) <= n.time() < dt.time(17, 0):
+              print("Daytime: nothing to do; the evening kick-starts will start the timer.")
+          else:
+              while True:
+                  n = now()
+                  tick = next_tick(n)
+                  wait = (tick - n).total_seconds()
+                  left = LIMIT - (time.time() - START)
+                  if wait > left:
+                      print("Handing over to a fresh timer run before the 6 h limit.", flush=True)
+                      run("night-timer.yml")
+                      break
+                  print(f"next check at {tick:%H:%M} Nepal (in {int(wait // 60)} min)", flush=True)
+                  time.sleep(max(0, wait))
+                  run("post.yml", only="night", dry_run="false")
+                  if tick.hour == 4:
+                      print("04:00 check started; done for tonight.")
+                      break
+          EOF
