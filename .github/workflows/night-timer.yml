@@ -16,6 +16,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   timer:
+    # only while the repo is public (Actions minutes are free); never burns private minutes
+    if: ${{ github.event.repository.private == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 358
     steps:
