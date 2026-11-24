@@ -104,7 +104,7 @@ def check(leagues, now, force=False):
     ready = {}
     for lg in leagues:
         if force:
-            ready[lg] = dt.datetime.now(ZoneInfo(LEAGUE_TZ[lg])).date().isoformat()
+            ready[lg] = "forced"  # manual repost: never mark a match day as posted
             continue
         days = ready_days(lg, fetch_events(lg, now), now, set(st.get(lg, [])))
         if days:
@@ -182,8 +182,9 @@ def post(ready, dry_run, out="out", gap=20, ronaldo=False, style="table"):
             continue
         post_id = res.get("post_id") or res.get("id")
         print(f"[{lg}] posted {post_id}")
-        st.setdefault(lg, []).extend(days.split(","))  # record at once so it is never posted twice
-        save_state(st)
+        if days != "forced":  # a manual forced repost must not block that night's automatic post
+            st.setdefault(lg, []).extend(days.split(","))  # record at once so it is never posted twice
+            save_state(st)
         try:
             sp.fb_like(post_id, token)
         except Exception as e:
