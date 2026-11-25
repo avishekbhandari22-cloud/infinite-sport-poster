@@ -1,12 +1,11 @@
 name: Night timer
 # Starts the league-table check every 30 min from 00:00 to 04:00 Nepal time (UTC+5:45).
-# GitHub often skips scheduled runs, so this job stays alive through the night and starts
-# "Post league tables" (only=night) itself at :00 and :30. The evening crons below just make sure
-# one timer is running before midnight; extra copies wait in the queue and exit at once.
+# GitHub often skips scheduled runs, so this job stays alive around the clock (handing over to a
+# fresh run every ~5 h 40 min) and starts "Post league tables" (only=night) itself at :00 and :30.
 # Free for public repos. post.yml keeps its own 04:28 / 05:28 runs as a backup.
 on:
   schedule:
-    - cron: "17 12-17 * * *"   # about 18:02 ... 23:02 Nepal: kick-starts
+    - cron: "17 */3 * * *"     # kick-starts every 3 h in case the chain ever breaks (extra copies just queue)
   workflow_dispatch:
 permissions:
   actions: write
@@ -54,23 +53,19 @@ jobs:
                       if x > t:
                           return x
 
-          n = now()
-          if dt.time(4, 5) <= n.time() < dt.time(17, 0):
-              print("Daytime: nothing to do; the evening kick-starts will start the timer.")
-          else:
-              while True:
-                  n = now()
-                  tick = next_tick(n)
-                  wait = (tick - n).total_seconds()
-                  left = LIMIT - (time.time() - START)
-                  if wait > left:
-                      print("Handing over to a fresh timer run before the 6 h limit.", flush=True)
-                      run("night-timer.yml")
-                      break
-                  print(f"next check at {tick:%H:%M} Nepal (in {int(wait // 60)} min)", flush=True)
-                  time.sleep(max(0, wait))
-                  run("post.yml", only="night", dry_run="false")
-                  if tick.hour == 4:
-                      print("04:00 check started; done for tonight.")
-                      break
+          # Runs all day: it sleeps until the next night tick and hands over to a fresh run before the
+          # 6 h job limit, so the chain never depends on GitHub's unreliable schedule.
+          while True:
+              n = now()
+              tick = next_tick(n)
+              wait = (tick - n).total_seconds()
+              left = LIMIT - (time.time() - START)
+              if wait > left:
+                  time.sleep(max(0, left - 60))
+                  print("Handing over to a fresh timer run before the 6 h limit.", flush=True)
+                  run("night-timer.yml")
+                  break
+              print(f"next check at {tick:%H:%M} Nepal (in {int(wait // 60)} min)", flush=True)
+              time.sleep(max(0, wait))
+              run("post.yml", only="night", dry_run="false")
           EOF
