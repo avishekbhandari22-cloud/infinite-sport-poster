@@ -32,7 +32,7 @@ def zones_from_notes(rows, notes, default):
     """Turn ESPN's notes into stadium zone limits: green = 1st note band, blue = 2nd band, red = 'eliminated'."""
     bands = []
     for r in rows:
-        d = (notes.get(r["tid"]) or "").lower()
+        d = (notes.get(r["tid"]) or "").lower().split(" - ")[0].strip()  # "playoffs - seeded/unseeded" = one band
         if not d:
             continue
         if not bands or bands[-1][0] != d:
