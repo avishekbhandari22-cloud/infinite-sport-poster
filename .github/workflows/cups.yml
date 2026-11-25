@@ -1,0 +1,45 @@
+name: Post cup tables
+# Champions League (top 18 of the league phase, one picture) and
+# AFC Champions League Elite (Al Nassr's region, with a Ronaldo line). Started by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      comp: { description: "uefa.champions, afc.champions, or both", default: "both" }
+      dry_run: { description: "true = build only, do not post", default: "true" }
+      hours: { description: "include results finished within this many hours", default: "30" }
+permissions:
+  contents: write
+concurrency:
+  group: cup-tables
+  cancel-in-progress: false
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Build and post
+        env:
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+        run: |
+          C="${{ inputs.comp }}"; [ "$C" = "both" ] && C="uefa.champions afc.champions"
+          for comp in $C; do
+            python cups.py --comp "$comp" --hours ${{ inputs.hours }} ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+            sleep 60
+          done
+      - name: Publish preview pictures (dry run only)
+        if: ${{ inputs.dry_run == 'true' }}
+        run: |
+          mkdir -p /tmp/prev && cp out/*.png out/*_caption.txt /tmp/prev/ || true
+          git config user.name "poster-bot"; git config user.email "poster-bot@users.noreply.github.com"
+          git checkout -q --orphan preview-cups
+          git rm -rfq .
+          cp /tmp/prev/* .
+          git add -A && git commit -qm "cup dry-run preview" && git push -f origin preview-cups
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: cup-tables, path: out/ }
