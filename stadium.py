@@ -32,6 +32,11 @@ STYLE = {
     "ksa.1": dict(lines=["Saudi Pro", "League"], zones=dict(ucl=0, uel=0, conf=0, po=None, rel=16), emblem=2488),
     "usa.1": dict(lines=["MLS", "Eastern"], zones=dict(ucl=7, uel=9, conf=0, po=None, rel=None),
                   labels=dict(ucl="Playoffs", uel="Play-in"), emblem=19),
+    # cups (posted by cups.py)
+    "uefa.champions": dict(lines=["Champions", "League"], zones=dict(ucl=8, uel=24, conf=0, po=None, rel=25),
+                           labels=dict(ucl="Round of 16", uel="Knockout play-off", rel="Eliminated"), emblem=2),
+    "afc.champions": dict(lines=["AFC Champions", "League Elite"], zones=dict(ucl=8, uel=0, conf=0, po=None, rel=None),
+                          labels=dict(ucl="Round of 16"), emblem=2283),
 }
 ALIAS = {"Internazionale": "Inter", "Inter Milan": "Inter", "AS Roma": "Roma", "Stade Rennais": "Rennes",
          "AS Monaco": "Monaco", "AJ Auxerre": "Auxerre", "Le Havre AC": "Le Havre", "Milan": "AC Milan"}
@@ -105,8 +110,9 @@ def initials(d, cx, cy, name, size):
     d.text((cx, cy), t, font=F("ExtraBold", int(size * 0.7)), fill=(40, 20, 90), anchor="mm")
 
 
-def render_standings(lg, rows, fetch=None, stats=None):
-    st = STYLE[lg]; z = st["zones"]; n = len(rows)
+def render_standings(lg, rows, fetch=None, stats=None, start=1, title=None, zones=None, labels=None):
+    """start: number of the first row (19 for the second half of a 36-team table); title overrides the header text."""
+    st = STYLE[lg]; z = dict(zones or st["zones"]); n = len(rows)
     names = []
     for r in rows:
         nm = r.get("full") or r["team"]
@@ -121,8 +127,8 @@ def render_standings(lg, rows, fetch=None, stats=None):
         d.ellipse([ecx - er, ecy - er, ecx + er, ecy + er], fill=(255, 255, 255), outline=(170, 120, 255), width=3); ball(d, ecx, ecy, 32)
     d = ImageDraw.Draw(im)
     d.line([(150, 22), (150, 102)], fill=WHITE, width=4)
-    title = " ".join(st["lines"]); sz = 66
-    while d.textlength(title, font=PF(sz)) > 660 and sz > 30: sz -= 2
+    title = title or " ".join(st["lines"]); sz = 66
+    while d.textlength(title, font=PF(sz)) > 640 and sz > 30: sz -= 2
     d.text((172, 66), title, font=PF(sz), fill=WHITE, anchor="lm")
     infinity(d, 872, 60, 20, GOLD, 6)
     d.text((910, 46), "INFINITE", font=F("ExtraBold", 30), fill=WHITE, anchor="lm"); d.text((910, 76), "SPORT", font=F("ExtraBold", 30), fill=GOLD, anchor="lm")
@@ -169,7 +175,7 @@ def render_standings(lg, rows, fetch=None, stats=None):
     lr = min(32, round(RH * 0.46))
     for i, r in enumerate(rows):
         name = names[i]; Pp, Wn, Dn, Ln, GD, PT = r["mp"], r["w"], r["d"], r["l"], r["gd"], r["pts"]
-        pos = i + 1; y = TY0 + HH + 4 + i * RH; cy = y + RH // 2
+        pos = start + i; y = TY0 + HH + 4 + i * RH; cy = y + RH // 2
         bad = (z["rel"] and pos >= z["rel"]) or (z["po"] and pos == z["po"])
         if bad:
             tint = Image.new("RGBA", (W, H), (0, 0, 0, 0)); tdd = ImageDraw.Draw(tint)
@@ -200,12 +206,12 @@ def render_standings(lg, rows, fetch=None, stats=None):
     if stats is not None:
         stats["logos"] = got; stats["rows"] = n
     # ---- bottom strip (40 px): small legend left, follow line right
-    lb = st.get("labels", {}); items = []
-    if z["ucl"] > 0: items.append(((60, 220, 60), lb.get("ucl", "Champions League")))
-    if z["uel"] > z["ucl"]: items.append(((60, 160, 255), lb.get("uel", "Europa League")))
+    lb = dict(st.get("labels", {}), **(labels or {})); items = []
+    if z["ucl"] > 0 and start <= z["ucl"]: items.append(((60, 220, 60), lb.get("ucl", "Champions League")))
+    if z["uel"] > z["ucl"] and start + n - 1 > z["ucl"] and start <= z["uel"]: items.append(((60, 160, 255), lb.get("uel", "Europa League")))
     if z.get("conf", 0) > z["uel"]: items.append(((175, 115, 255), "Conference League"))
     if z["po"]: items.append(((255, 170, 40), "Relegation play-off"))
-    if z["rel"]: items.append(((255, 70, 70), "Relegation"))
+    if z["rel"] and start + n - 1 >= z["rel"]: items.append(((255, 70, 70), lb.get("rel", "Relegation")))
     fy0 = H - STRIP; fcy = fy0 + STRIP // 2
     d.rectangle([0, fy0, W, H], fill=(90, 30, 200))
     ft = "FOLLOW INFINITE SPORT FOR MORE UPDATES"
