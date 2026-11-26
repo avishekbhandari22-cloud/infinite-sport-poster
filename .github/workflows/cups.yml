@@ -7,6 +7,7 @@ on:
       comp: { description: "uefa.champions, afc.champions, or both", default: "both" }
       dry_run: { description: "true = build only, do not post", default: "true" }
       hours: { description: "include results finished within this many hours", default: "30" }
+      rest_only: { description: "true = only add places 19-36 as a pinned comment on the latest Champions League post", default: "false" }
 permissions:
   contents: write
 concurrency:
@@ -28,7 +29,7 @@ jobs:
         run: |
           C="${{ inputs.comp }}"; [ "$C" = "both" ] && C="uefa.champions afc.champions"
           for comp in $C; do
-            python cups.py --comp "$comp" --hours ${{ inputs.hours }} ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+            python cups.py --comp "$comp" --hours ${{ inputs.hours }} ${{ inputs.dry_run == 'true' && '--dry-run' || '' }} ${{ inputs.rest_only == 'true' && '--rest-only' || '' }}
             sleep 60
           done
       - name: Publish preview pictures (dry run only)
