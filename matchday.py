@@ -158,8 +158,7 @@ def post(ready, dry_run, out="out", gap=20, ronaldo=False, style="table"):
             line = ronaldo_line(sp.parse_standings(sp.http_json(sp.ESPN.format(lg=lg)))[0]["rows"])
             if line:
                 item["caption"] = item["caption"] + "\n" + line
-        # a league's very first post (e.g. the new Süper Lig) is a "Who will win?" poster, then normal tables
-        if style == "titlerace" or (lg == "tur.1" and not st.get(lg)):  # "Who will win <league>?" poster, top 3 from the same live table
+        if style == "titlerace":  # "Who will win <league>?" poster, top 3 from the same live table
             try:
                 import titlerace
                 js = sp.http_json(sp.ESPN.format(lg=lg))
