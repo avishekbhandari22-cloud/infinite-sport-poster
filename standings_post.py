@@ -23,10 +23,11 @@ LEAGUES = {
     "ger.1": dict(name="Bundesliga", short="Bundesliga", accent=(200, 20, 20), zones=[(4, "ucl"), (5, "uel")], rel=3),
     "fra.1": dict(name="Ligue 1", short="Ligue 1", accent=(10, 40, 90), zones=[(3, "ucl"), (4, "uel")], rel=2),
     "ksa.1": dict(name="Saudi Pro League", short="Saudi Pro League", accent=(0, 100, 60), zones=[(3, "acl")], rel=3),
+    "tur.1": dict(name="Süper Lig", short="Süper Lig", accent=(200, 10, 30), zones=[(2, "ucl"), (3, "uel")], rel=3),
     "usa.1": dict(name="MLS", short="MLS", accent=(15, 15, 20), zones=[], rel=0),
 }
 GROUPS = {
-    "europe_saudi": ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "ksa.1"],
+    "europe_saudi": ["eng.1", "esp.1", "ita.1", "ger.1", "fra.1", "ksa.1", "tur.1"],
     "mls": ["usa.1"],
 }
 TOP_N = 11  # rows shown on the main picture, like the page's current style
@@ -314,6 +315,7 @@ TOP_CLUBS = {
     "ger.1": ["bayern", "dortmund"],
     "fra.1": ["paris saint", "psg", "marseille", "monaco", "lyon", "lille"],
     "ksa.1": ["nassr", "hilal", "qad", "ittihad"],
+    "tur.1": ["galatasaray", "fenerbah", "besiktas", "beşiktaş", "trabzon"],
 }
 
 
@@ -359,13 +361,13 @@ def caption(lg, groups, results):
 
 # ----------------------------------------------------------------- new style: table caption + two comments
 IMG_NAME = {"eng.1": "premier_league", "esp.1": "la_liga", "ita.1": "serie_a", "ger.1": "bundesliga",
-            "fra.1": "ligue_1", "ksa.1": "saudi_pro_league", "usa.1": "mls_eastern"}
+            "fra.1": "ligue_1", "ksa.1": "saudi_pro_league", "tur.1": "super_lig", "usa.1": "mls_eastern"}
 # language of the 2nd comment. Premier League and MLS: English only (one comment).
 LOCAL_LANG = {"ita.1": "it", "esp.1": "es", "ger.1": "de", "fra.1": "fr", "ksa.1": "ar"}
 SCOPE_EN = {"eng.1": "the Premier League", "esp.1": "La Liga", "ita.1": "Serie A", "ger.1": "the Bundesliga",
-            "fra.1": "Ligue 1", "ksa.1": "the Saudi Pro League", "usa.1": "the Eastern Conference"}
+            "fra.1": "Ligue 1", "ksa.1": "the Saudi Pro League", "tur.1": "the Süper Lig", "usa.1": "the Eastern Conference"}
 TITLE_EN = {"eng.1": "the Premier League", "esp.1": "La Liga", "ita.1": "the Scudetto", "ger.1": "the Bundesliga",
-            "fra.1": "Ligue 1", "ksa.1": "the Saudi Pro League", "usa.1": "the MLS Cup"}
+            "fra.1": "Ligue 1", "ksa.1": "the Saudi Pro League", "tur.1": "the Süper Lig", "usa.1": "the MLS Cup"}
 LG_LOCAL = {"it": "Serie A", "es": "La Liga", "de": "Bundesliga", "fr": "Ligue 1", "ar": "دوري روشن السعودي"}
 
 
