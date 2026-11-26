@@ -19,7 +19,7 @@ from zoneinfo import ZoneInfo
 SB = "https://site.api.espn.com/apis/site/v2/sports/soccer/{lg}/scoreboard?dates={d}"
 LEAGUE_TZ = {
     "eng.1": "Europe/London", "esp.1": "Europe/Madrid", "ita.1": "Europe/Rome", "ger.1": "Europe/Berlin",
-    "fra.1": "Europe/Paris", "ksa.1": "Asia/Riyadh", "usa.1": "America/New_York",
+    "fra.1": "Europe/Paris", "ksa.1": "Asia/Riyadh", "tur.1": "Europe/Istanbul", "usa.1": "America/New_York",
 }
 ORDER = list(LEAGUE_TZ)
 STATE = "state/posted.json"
