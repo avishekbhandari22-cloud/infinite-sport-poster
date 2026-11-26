@@ -1,13 +1,13 @@
 [
  {
-  "at": "2026-11-26T18:00:00+05:45",
+  "at": "2026-11-26T19:00:00+05:45",
   "workflow": "post.yml",
-  "note": "Süper Lig test: Who will win poster",
+  "note": "Süper Lig test: normal standings table",
   "inputs": {
    "only": "tur.1",
    "force": "true",
    "dry_run": "false",
-   "style": "titlerace"
+   "style": "table"
   }
  }
 ]
