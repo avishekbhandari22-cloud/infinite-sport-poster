@@ -16,7 +16,7 @@ WHITE = (255, 255, 255)
 RED = (200, 20, 40)
 
 LEAGUE_TITLE = {"eng.1": "PREMIER LEAGUE", "esp.1": "LA LIGA", "ita.1": "SERIE A", "ger.1": "BUNDESLIGA",
-                "fra.1": "LIGUE 1", "ksa.1": "SAUDI PRO LEAGUE", "usa.1": "THE EAST"}
+                "fra.1": "LIGUE 1", "ksa.1": "SAUDI PRO LEAGUE", "tur.1": "SÜPER LIG", "usa.1": "THE EAST"}
 SHORT = {  # nicknames for the 'pick your champion' line
     "barcelona": "BARÇA", "real madrid": "REAL", "atlético": "ATLETI", "atletico": "ATLETI",
     "manchester city": "CITY", "man city": "CITY", "manchester united": "UNITED", "man united": "UNITED",
