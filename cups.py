@@ -142,10 +142,46 @@ def fb_post_album(page, token, pngs, message):
         return json.load(r)
 
 
+def fb_photo_comment(post_id, token, png, message=""):
+    body, ct = sp.multipart({"message": message, "access_token": token}, {"source": ("table.png", png, "image/png")})
+    req = urllib.request.Request(f"{sp.GRAPH}/{post_id}/comments", data=body, headers={"Content-Type": ct})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        return json.load(r)
+
+
+def fb_pin_comment(comment_id, token):
+    body = urllib.parse.urlencode({"is_pinned": "true", "access_token": token}).encode()
+    req = urllib.request.Request(f"{sp.GRAPH}/{comment_id}", data=body)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.load(r)
+
+
+def latest_post_with(page, token, words):
+    url = f"{sp.GRAPH}/{page}/posts?fields=id,message,created_time&limit=15&access_token={urllib.parse.quote(token)}"
+    for p in sp.http_json(url).get("data", []):
+        if words.lower() in (p.get("message") or "").lower():
+            return p["id"]
+    return None
+
+
+def comment_rest(page, token, post_id, png):
+    """Second half of the table as a photo comment, then try to pin it (Facebook may refuse pinning via API)."""
+    res = fb_photo_comment(post_id, token, png, "Places 19-36 \U0001F447")
+    cid = res.get("id")
+    print(f"rest-of-table comment {cid} on {post_id}")
+    try:
+        fb_pin_comment(cid, token)
+        print("comment pinned")
+    except Exception as e:
+        print(f"PIN FAILED (pin it by hand): {e}", file=sys.stderr)
+    return cid
+
+
 # ----------------------------------------------------------------- build + post
 def build(comp, now, hours):
     groups, notes = groups_with_notes(comp)
     results = sp.completed_results(comp, now, hours=hours)
+    rest = None
     if comp == "afc.champions":
         g = next((g for g in groups if any("nassr" in (r["team"] + r["full"]).lower() for r in g["rows"])), groups[0])
         rows = g["rows"]
@@ -168,12 +204,17 @@ def build(comp, now, hours):
         z, lab = zones_from_notes(rows, notes, stadium.STYLE[comp]["zones"])
         # one picture: the top 18 of the league phase (Amisha: "only 18, no need for the others")
         pics = [stadium.render_standings(comp, rows[:18], sp.fetch_logo, start=1, title="Champions League", zones=z, labels=lab)]
+        # places 19-36 go in a pinned comment under the post
+        rest = stadium.render_standings(comp, rows[18:], sp.fetch_logo, start=19, title="Champions League", zones=z, labels=lab) if len(rows) > 18 else None
         lines = []
         if results:
             lines += results_block(comp, rows, results, 5) + [""]
         lines += ["\U0001F4CA " + " ".join(table_lines(comp, rows, z))]
         cap = "\n".join(lines)
-    return dict(caption=cap, pngs=[sp.to_png(p) for p in pics], pics=pics, results=results)
+    item = dict(caption=cap, pngs=[sp.to_png(p) for p in pics], pics=pics, results=results)
+    if comp == "uefa.champions" and rest is not None:
+        item["rest"] = rest
+    return item
 
 
 def main():
@@ -181,6 +222,7 @@ def main():
     ap.add_argument("--comp", required=True, choices=list(NAME))
     ap.add_argument("--hours", type=int, default=30, help="results finished within this many hours")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--rest-only", action="store_true", help="only add the 19-36 picture as a comment on the latest Champions League post")
     a = ap.parse_args()
     now = dt.datetime.now(dt.timezone.utc)
     item = build(a.comp, now, a.hours)
@@ -188,10 +230,20 @@ def main():
     for i, p in enumerate(item["pics"], 1):
         p.save(f"out/{a.comp}_{i}.png")
     open(f"out/{a.comp}_caption.txt", "w").write(item["caption"])
+    if item.get("rest") is not None:
+        item["rest"].save(f"out/{a.comp}_19-36.png")
     print(item["caption"])
     if a.dry_run:
         return
     page, token = os.environ["FB_PAGE_ID"], os.environ["FB_PAGE_TOKEN"]
+    if a.rest_only:
+        if item.get("rest") is None:
+            return
+        pid = latest_post_with(page, token, "Champions League table")
+        if not pid:
+            sys.exit("no recent Champions League post found")
+        comment_rest(page, token, pid, sp.to_png(item["rest"]))
+        return
     if len(item["pngs"]) == 1:
         res = sp.fb_post_photo(page, token, item["pngs"][0], item["caption"])
     else:
@@ -202,6 +254,12 @@ def main():
         sp.fb_like(post_id, token)
     except Exception as e:
         print(f"like failed: {e}", file=sys.stderr)
+    if item.get("rest") is not None:
+        time.sleep(5)
+        try:
+            comment_rest(page, token, post_id, sp.to_png(item["rest"]))
+        except Exception as e:
+            print(f"rest-of-table comment failed: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
