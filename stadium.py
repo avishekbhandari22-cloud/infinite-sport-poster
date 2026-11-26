@@ -30,6 +30,7 @@ STYLE = {
     "ger.1": dict(lines=["Bundesliga"], zones=dict(ucl=4, uel=5, conf=6, po=16, rel=17), emblem=10),
     "fra.1": dict(lines=["Ligue 1"], zones=dict(ucl=4, uel=6, conf=0, po=16, rel=17), emblem=9),
     "ksa.1": dict(lines=["Saudi Pro", "League"], zones=dict(ucl=0, uel=0, conf=0, po=None, rel=16), emblem=2488),
+    "tur.1": dict(lines=["Süper Lig"], zones=dict(ucl=2, uel=3, conf=4, po=None, rel=16), emblem=18),
     "usa.1": dict(lines=["MLS", "Eastern"], zones=dict(ucl=7, uel=9, conf=0, po=None, rel=None),
                   labels=dict(ucl="Playoffs", uel="Play-in"), emblem=19),
     # cups (posted by cups.py)
