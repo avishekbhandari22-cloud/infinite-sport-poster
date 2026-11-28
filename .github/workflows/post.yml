@@ -9,7 +9,8 @@ on:
     - cron: "13,33,53 18-21 * * *"  # about 23:58, 00:18 ... 03:38 Nepal
     - cron: "13 22 * * *"           # about 03:58 Nepal
     - cron: "43 22,23 * * *"        # catch-up about 04:28 and 05:28 Nepal, only if something was missed
-    - cron: "7 4 * * *"             # 09:52 Nepal - MLS
+    # MLS paused until next season (Amisha, 28 Nov 2026) - restore this line to restart:
+    # - cron: "7 4 * * *"             # 09:52 Nepal - MLS
   workflow_dispatch:
     inputs:
       only: { description: "optional league codes e.g. esp.1 or eng.1,esp.1", default: "" }
